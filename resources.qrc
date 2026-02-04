@@ -1,0 +1,21 @@
+<RCC>
+  <qresource prefix="/">
+    <!-- Tab close button -->
+    <file>resources/icons/tab_close_normal.svg</file>
+    <file>resources/icons/tab_close_hover.svg</file>
+    <file>resources/icons/tab_close_pressed.svg</file>
+
+    <!-- ModuleDialog sidebar icons -->
+    <file>resources/icons/basic.svg</file>
+    <file>resources/icons/local_cfg.svg</file>
+    <file>resources/icons/local_harness.svg</file>
+    <file>resources/icons/rpc.svg</file>
+    <file>resources/icons/pipe_ports.svg</file>
+    <file>resources/icons/submodules.svg</file>
+    <file>resources/icons/pipes.svg</file>
+    <file>resources/icons/storages.svg</file>
+    <file>resources/icons/connections.svg</file>
+    <file>resources/icons/orders.svg</file>
+    <file>resources/icons/code.svg</file>
+  </qresource>
+</RCC>

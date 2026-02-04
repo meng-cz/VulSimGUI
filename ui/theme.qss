@@ -1,0 +1,482 @@
+/* =========================
+   HYPER-IDE Dark Theme QSS
+   Primary: #007180
+   Background: #1b2028 / #12161b / #0d1117
+   Panel: #232932
+   Border: #2d353f
+   Text: #e5e7eb (light) / #94a3b8 (muted)
+   ========================= */
+
+/* ----- Global ----- */
+* {
+    font-family: "Manrope", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "sans-serif";
+    color: #e5e7eb;
+}
+
+QWidget {
+    background: #1b2028;
+}
+
+QMainWindow {
+    background: #1b2028;
+}
+
+/* ----- ToolBar / Menu ----- */
+QToolBar {
+    background: #1b2028;
+    border-bottom: 1px solid #2d353f;
+    spacing: 6px;
+    padding: 4px 6px;
+}
+
+QToolButton {
+    background: transparent;
+    border: 0px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    color: #e5e7eb;
+}
+
+QToolButton:hover {
+    background: rgba(0, 113, 128, 0.12);
+}
+
+QToolButton:pressed {
+    background: rgba(0, 113, 128, 0.22);
+}
+
+QMenuBar {
+    background: #1b2028;
+    border-bottom: 1px solid #2d353f;
+}
+
+QMenuBar::item {
+    background: transparent;
+    padding: 6px 10px;
+}
+
+QMenuBar::item:selected {
+    background: rgba(0, 113, 128, 0.12);
+    border-radius: 6px;
+}
+
+QMenu {
+    background: #232932;
+    border: 1px solid #2d353f;
+    padding: 6px;
+}
+
+QMenu::item {
+    padding: 6px 14px;
+    border-radius: 6px;
+}
+
+QMenu::item:selected {
+    background: rgba(0, 113, 128, 0.22);
+}
+
+/* ----- Status Bar ----- */
+QStatusBar {
+    background: #1b2028;
+    border-top: 1px solid #2d353f;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+/* ----- Dock Widgets ----- */
+QDockWidget {
+    titlebar-close-icon: none;
+    titlebar-normal-icon: none;
+    border: 1px solid #2d353f;
+    background: #1b2028;
+}
+
+QDockWidget::title {
+    background: rgba(35, 41, 50, 0.85);
+    padding: 8px 10px;
+    border-bottom: 1px solid #2d353f;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+}
+
+QDockWidget::close-button, QDockWidget::float-button {
+    border: none;
+    background: transparent;
+    padding: 0px;
+    margin: 0px;
+}
+
+QDockWidget QWidget {
+    background: #1b2028;
+}
+
+/* Splitter handle */
+QSplitter::handle {
+    background: #2d353f;
+}
+
+QSplitter::handle:hover {
+    background: rgba(0, 113, 128, 0.35);
+}
+
+/* ----- Tabs ----- */
+QTabWidget::pane {
+    border: 1px solid #2d353f;
+    top: -1px;
+    background: #12161b;
+}
+
+QTabBar {
+    background: #1b2028;
+}
+
+QTabBar::tab {
+    background: transparent;
+    border-right: 1px solid #2d353f;
+    padding: 8px 14px;
+    color: #94a3b8;
+    min-height: 28px;
+}
+
+QTabBar::tab:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #e5e7eb;
+}
+
+QTabBar::tab:selected {
+    background: #12161b;
+    color: #e5e7eb;
+    border-top: 2px solid #007180;
+}
+
+/*QTabBar::close-button {*/
+/*    image: none; */
+/*    width: 12px;*/
+/*    height: 12px;*/
+/*    border-radius: 6px;*/
+/*    background: rgba(255,255,255,0.10);*/
+/*}*/
+
+QTabBar::close-button:hover {
+    background: rgba(255,255,255,0.18);
+}
+
+/* ----- Buttons ----- */
+QPushButton {
+    background: #232932;
+    border: 1px solid #2d353f;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-weight: 600;
+    color: #e5e7eb;
+}
+
+QPushButton:hover {
+    border-color: rgba(0, 113, 128, 0.7);
+    background: rgba(0, 113, 128, 0.12);
+}
+
+QPushButton:pressed {
+    background: rgba(0, 113, 128, 0.22);
+}
+
+QPushButton:disabled {
+    color: rgba(229, 231, 235, 0.35);
+    background: rgba(35, 41, 50, 0.55);
+    border-color: rgba(45, 53, 63, 0.55);
+}
+
+/* Primary-style button helper (setProperty("class","primary")) */
+QPushButton[class="primary"] {
+    background: #007180;
+    border: 1px solid rgba(0, 113, 128, 0.9);
+    color: #ffffff;
+}
+
+QPushButton[class="primary"]:hover {
+    background: rgba(0, 113, 128, 0.85);
+}
+
+QPushButton[class="primary"]:pressed {
+    background: rgba(0, 113, 128, 0.72);
+}
+
+/* ----- Inputs ----- */
+QLineEdit, QTextEdit, QPlainTextEdit {
+    background: #0d1117;
+    border: 1px solid #2d353f;
+    border-radius: 8px;
+    padding: 6px 8px;
+    selection-background-color: rgba(0, 113, 128, 0.45);
+    selection-color: #ffffff;
+}
+
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
+    border: 1px solid rgba(0, 113, 128, 0.85);
+}
+
+/* Mono editor helper (setProperty("class","mono")) */
+QPlainTextEdit[class="mono"], QTextEdit[class="mono"] {
+    font-family: "JetBrains Mono", "Consolas", "Cascadia Mono", monospace;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+/* ----- Tree / List / Table ----- */
+QTreeWidget, QListWidget, QTableView {
+    background: #1b2028;
+    border: none;
+    outline: none;
+}
+
+QTreeWidget::item, QListWidget::item {
+    padding: 6px 8px;
+    border-radius: 6px;
+    color: #cbd5e1;
+}
+
+QTreeWidget::item:hover, QListWidget::item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+QTreeWidget::item:selected, QListWidget::item:selected {
+    background: rgba(0, 113, 128, 0.35);
+    color: #ffffff;
+}
+
+QHeaderView::section {
+    background: rgba(35, 41, 50, 0.85);
+    color: #94a3b8;
+    padding: 6px 8px;
+    border: 1px solid #2d353f;
+    font-weight: 600;
+}
+
+/* ----- ScrollBars ----- */
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px 2px 2px 2px;
+}
+
+QScrollBar::handle:vertical {
+    background: rgba(148, 163, 184, 0.28);
+    border-radius: 5px;
+    min-height: 26px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: rgba(148, 163, 184, 0.40);
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 2px 2px 2px 2px;
+}
+
+QScrollBar::handle:horizontal {
+    background: rgba(148, 163, 184, 0.28);
+    border-radius: 5px;
+    min-width: 26px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: rgba(148, 163, 184, 0.40);
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+
+/* ----- GroupBox / Frames ----- */
+QGroupBox {
+    border: 1px solid #2d353f;
+    border-radius: 10px;
+    margin-top: 10px;
+    padding: 10px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 6px;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+/* ----- ToolTip ----- */
+QToolTip {
+    background: #232932;
+    color: #e5e7eb;
+    border: 1px solid #2d353f;
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+
+/* ----- Optional: GraphicsView canvas background ----- */
+QGraphicsView {
+    background: #12161b;
+    border: 1px solid #2d353f;
+}
+
+QPushButton#miniIcon {
+    background: transparent;
+    border: 1px solid rgba(45, 53, 63, 1);
+    border-radius: 6px;
+    padding: 0px;
+    font-weight: 800;
+    color: #94a3b8;
+}
+QPushButton#miniIcon:hover {
+    background: rgba(0, 113, 128, 0.12);
+    color: #e5e7eb;
+    border-color: rgba(0, 113, 128, 0.6);
+}
+
+/* miniIcon disabled state (for + / −) */
+QPushButton#miniIcon:disabled {
+    color: rgba(148, 163, 184, 0.35);
+    border-color: rgba(45, 53, 63, 0.55);
+    background: rgba(35, 41, 50, 0.25);
+}
+
+QPushButton#miniIcon:disabled:hover {
+    /* 禁用时不需要 hover 反馈，保持一致 */
+    background: rgba(35, 41, 50, 0.25);
+    border-color: rgba(45, 53, 63, 0.55);
+}
+
+/* =========================
+   IDE-like Tab Close Button
+   Requires resources:
+   :/resources/icons/tab_close_normal.svg
+   :/resources/icons/tab_close_hover.svg
+   :/resources/icons/tab_close_pressed.svg
+   ========================= */
+
+QTabBar::close-button {
+    image: url(:/resources/icons/tab_close_normal.svg);
+    subcontrol-position: right;
+    subcontrol-origin: padding;
+
+    width: 16px;
+    height: 16px;
+    margin-left: 8px;
+    margin-right: 6px;
+
+    border-radius: 8px;
+    background: transparent;
+}
+
+QTabBar::close-button:hover {
+    image: url(:/resources/icons/tab_close_hover.svg);
+    background: rgba(255, 255, 255, 0.08); /* hover 高亮 */
+}
+
+QTabBar::close-button:pressed {
+    image: url(:/resources/icons/tab_close_pressed.svg);
+    background: rgba(239, 68, 68, 0.16);  /* pressed 红色底 */
+}
+
+/* 可选：选中标签页里的 close-button 更明显一点 */
+QTabBar::tab:selected QAbstractButton {
+    /* 这条主要让按钮在选中 tab 上更易见（不改图标） */
+    opacity: 1.0;
+}
+
+/* 可选：非选中 tab 的 close-button 略淡，hover 才清晰 */
+QTabBar::tab:!selected QAbstractButton {
+    opacity: 0.75;
+}
+QTabBar::tab:!selected QAbstractButton:hover {
+    opacity: 1.0;
+}
+
+/* =========================
+   IDE-like Sidebar (QListWidget)
+   For ModuleDialog left menu
+   ========================= */
+
+/* 建议给 ModuleDialog 里的 sidebar 设置 objectName:
+   self.sidebar.setObjectName("ideSidebar")
+   这样只影响侧边栏，不影响其它 QListWidget
+*/
+QListWidget#ideSidebar {
+    background: #1b2028;                 /* 与全局一致 */
+    border: 1px solid #2d353f;           /* 像 IDE 的面板边界 */
+    border-radius: 10px;
+    padding: 6px 0px;                    /* 上下留白 */
+    outline: none;
+}
+
+/* 去掉默认 focus 虚线框 */
+QListWidget#ideSidebar:focus {
+    outline: none;
+}
+
+/* item：更像 IDE 的列表（不做圆角，让左侧竖条贴边更干净） */
+QListWidget#ideSidebar::item {
+    margin: 2px 6px;                     /* item 与外边框间距 */
+    padding: 8px 10px 8px 30px;          /* 左侧预留 icon 区（可放 16px icon） */
+    border-radius: 8px;                  /* item 自身圆角（不是 0，保留卡片感） */
+    color: #94a3b8;
+    background: transparent;
+
+    /* 默认不显示竖条：透明边框占位，避免选中时宽度变化导致抖动 */
+    border-left: 3px solid transparent;
+}
+
+/* hover：轻微高亮 + 文字变亮 */
+QListWidget#ideSidebar::item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #e5e7eb;
+}
+
+/* selected：背景更实 + 左侧竖条用主色 + 文字变亮 */
+QListWidget#ideSidebar::item:selected {
+    background: rgba(0, 113, 128, 0.18); /* 比你 tree selected 更克制一点，更像 IDE */
+    color: #e5e7eb;
+    border-left: 3px solid #007180;
+}
+
+/* selected + hover：再亮一点 */
+QListWidget#ideSidebar::item:selected:hover {
+    background: rgba(0, 113, 128, 0.26);
+}
+
+/* 可选：禁用项（如果你未来用到） */
+QListWidget#ideSidebar::item:disabled {
+    color: rgba(148, 163, 184, 0.35);
+}
+
+/* 分隔线（如果你用 QListWidgetItem 设置为 separator，可用 setFlags 禁止选择）
+   QSS 无法直接识别“分隔项”，这里提供一个可选思路：
+   - 给分隔项设置 data(UserRole) 再用 delegate 画；纯 QSS 做不到完美。
+*/
+
+/* Sidebar 自己的滚动条，跟你主题一致且更细 */
+QListWidget#ideSidebar QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px 2px 2px 2px;
+}
+QListWidget#ideSidebar QScrollBar::handle:vertical {
+    background: rgba(148, 163, 184, 0.28);
+    border-radius: 5px;
+    min-height: 26px;
+}
+QListWidget#ideSidebar QScrollBar::handle:vertical:hover {
+    background: rgba(148, 163, 184, 0.40);
+}
+QListWidget#ideSidebar QScrollBar::add-line:vertical,
+QListWidget#ideSidebar QScrollBar::sub-line:vertical {
+    height: 0px;
+}
