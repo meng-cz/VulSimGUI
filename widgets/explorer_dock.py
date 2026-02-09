@@ -55,6 +55,7 @@ class ConfigDialog(QDialog):
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
 
+
     def get_data(self) -> tuple[str, str, str]:
         return (
             self.name_edit.text().strip(),
@@ -62,6 +63,133 @@ class ConfigDialog(QDialog):
             self.expr_edit.toPlainText().strip(),
         )
 
+
+class RenameDialog(QDialog):
+    """仅修改名称"""
+    def __init__(self, title: str, name: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(420, 120)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.name_edit = QLineEdit()
+        self.name_edit.setText(name)
+        self.name_edit.selectAll()
+
+        form.addRow("新名称：", self.name_edit)
+        layout.addLayout(form)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def get_name(self) -> str:
+        return self.name_edit.text().strip()
+
+
+class CommentEditDialog(QDialog):
+    """仅修改注释"""
+    def __init__(self, title: str, comment: str = "", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(520, 220)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.comment_edit = QTextEdit()
+        self.comment_edit.setPlaceholderText("输入注释（留空表示清空注释）")
+        self.comment_edit.setText(comment or "")
+        self.comment_edit.setFixedHeight(120)
+
+        form.addRow("注释：", self.comment_edit)
+        layout.addLayout(form)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def get_comment(self) -> str:
+        return self.comment_edit.toPlainText().strip()
+
+
+class ConfigRefDialog(QDialog):
+    """
+    展示 configlib.listref 的结果（正向引用 + 反向引用）。
+    forward/reverse 数据结构：{
+        "names": [...],
+        "childs": [...],
+        "values": [...],
+        "realvalues": [...]
+    }
+    """
+    def __init__(self, cfg_name: str, forward: dict, reverse: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"配置项引用关系 - {cfg_name}")
+        self.setModal(True)
+        self.resize(860, 520)
+
+        layout = QVBoxLayout(self)
+
+        tabs = QTabWidget()
+        layout.addWidget(tabs, 1)
+
+        tabs.addTab(self._make_table(forward, mode="引用（依赖）"), "引用（依赖）")
+        tabs.addTab(self._make_table(reverse, mode="反向引用（被依赖）"), "反向引用（被依赖）")
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        btns.accepted.connect(self.accept)
+        layout.addWidget(btns)
+
+    def _make_table(self, data: dict, mode: str) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        table = QTableWidget()
+        lay.addWidget(table)
+
+        names = data.get("names", []) or []
+        childs = data.get("childs", []) or []
+        values = data.get("values", []) or []
+        realvalues = data.get("realvalues", []) or []
+
+        row_count = len(names)
+        table.setRowCount(row_count)
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(["名称", "关联项(childs)", "表达式(value)", "实值(realvalue)"])
+
+        for i in range(row_count):
+            n = names[i] if i < len(names) else ""
+            c = childs[i] if i < len(childs) else ""
+            v = values[i] if i < len(values) else ""
+            rv = realvalues[i] if i < len(realvalues) else ""
+
+            table.setItem(i, 0, QTableWidgetItem(str(n)))
+            table.setItem(i, 1, QTableWidgetItem(str(c)))
+            table.setItem(i, 2, QTableWidgetItem(str(v)))
+            table.setItem(i, 3, QTableWidgetItem(str(rv)))
+
+        table.resizeColumnsToContents()
+        table.setWordWrap(True)
+        table.setSortingEnabled(False)
+
+        if row_count == 0:
+            hint = QLabel(f"{mode}：无数据")
+            hint.setStyleSheet("color:#666;")
+            lay.addWidget(hint)
+
+        return w
 
 
 # =========================
@@ -80,8 +208,25 @@ class ExplorerDock(QWidget):
     openHarnessRequested = pyqtSignal(str, dict)   # (harness_name, harness_data)
     openModuleRequested = pyqtSignal(str, dict)  # (module_name, module_data)
 
-    # 【新增信号】请求添加配置 (name, value/expr, comment)
+    # 信号 请求添加配置 (name, value/expr, comment)
     addConfigRequested = pyqtSignal(str, str, str)
+    # 信号 请求删除配置（names）
+    removeConfigRequested = pyqtSignal(list)
+    # 信号 防止重复点击，临时禁用删除按钮
+    removeConfigResult = pyqtSignal(list, list)  # success_names, failed_items[(name,msg)]
+
+    # 配置项更新
+    updateConfigRequested = pyqtSignal(str, str)          # (name, value)
+    # / 注释
+    commentConfigRequested = pyqtSignal(str, str)         # (name, comment)
+    # / 重命名
+    renameConfigRequested = pyqtSignal(str, str, str, str)  # (old_name, new_name, old_value, old_comment)
+    # / 引用查询
+    listRefRequested = pyqtSignal(str)                    # (name)
+
+    # 回传：listref 结果
+    listRefResult = pyqtSignal(str, dict, dict, str)      # (name, forward_dict, reverse_dict, err_msg)
+
 
     def __init__(self):
         super().__init__()
@@ -376,6 +521,10 @@ class ExplorerDock(QWidget):
         self.btn_harness_cancel_delete.clicked.connect(self._exit_harness_delete_mode)
         self.btn_harness_delete_checked.clicked.connect(self._delete_checked_harness_items)
 
+        self.removeConfigResult.connect(self._apply_cfg_remove_result)
+        self.listRefResult.connect(self._on_listref_result)
+
+
     # =========================
     # 通用：checkbox
     # =========================
@@ -389,6 +538,14 @@ class ExplorerDock(QWidget):
             flags &= ~Qt.ItemFlag.ItemIsUserCheckable
             item.setFlags(flags)
             item.setData(0, Qt.ItemDataRole.CheckStateRole, None)
+
+    def _lock_cfg_delete_ui(self, locked: bool):
+        """
+        删除请求发出后锁 UI，防止重复点击/重复发请求
+        """
+        self.btn_cfg_delete_checked.setEnabled(not locked)
+        self.btn_cfg_cancel_delete.setEnabled(not locked)
+        self.global_cfg.setEnabled(not locked)
 
     # =========================
     # 配置：CRUD + UI
@@ -427,6 +584,7 @@ class ExplorerDock(QWidget):
         # 将 expr 作为 value 传递
         self.addConfigRequested.emit(name, expr, comment)
 
+
     def _edit_cfg_item(self, item: QTreeWidgetItem):
         if self._cfg_delete_mode:
             return
@@ -464,13 +622,82 @@ class ExplorerDock(QWidget):
         menu = QMenu(self)
         act_open = QAction("打开", self)
         act_edit = QAction("编辑", self)
+        act_rename = QAction("重命名", self)
+        act_refs = QAction("查看关联引用", self)
+        act_comment = QAction("修改注释", self)
+
         act_open.setEnabled(not self._cfg_delete_mode)
         act_edit.setEnabled(not self._cfg_delete_mode)
+        act_rename.setEnabled(not self._cfg_delete_mode)
+        act_refs.setEnabled(not self._cfg_delete_mode)
+        act_comment.setEnabled(not self._cfg_delete_mode)
+
         act_open.triggered.connect(lambda: self._open_cfg_relation(item))
         act_edit.triggered.connect(lambda: self._edit_cfg_item(item))
+        act_rename.triggered.connect(lambda: self._rename_cfg_item(item))
+        act_refs.triggered.connect(lambda: self._show_cfg_refs(item))
+        act_comment.triggered.connect(lambda: self._edit_cfg_comment(item))
+
         menu.addAction(act_open)
         menu.addAction(act_edit)
+        menu.addSeparator()
+        menu.addAction(act_rename)
+        menu.addAction(act_comment)
+        menu.addAction(act_refs)
+
         menu.exec(self.global_cfg.viewport().mapToGlobal(pos))
+
+    def _rename_cfg_item(self, item: QTreeWidgetItem):
+        if self._cfg_delete_mode:
+            return
+        data = self._get_cfg_data(item)
+        old_name = data.get("name", item.text(0))
+        old_comment = data.get("comment", "") or ""
+        old_expr = data.get("expr", "") or ""
+
+        dlg = RenameDialog("重命名配置项", name=old_name, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_name = dlg.get_name()
+        if not new_name:
+            QMessageBox.warning(self, "输入无效", "名称不能为空。")
+            return
+        if new_name != old_name and self._find_cfg_by_name(new_name) is not None:
+            QMessageBox.warning(self, "重复项", f"配置项“{new_name}”已存在。")
+            return
+
+        # ✅ 交给后端做：这里采用“add(new)+remove(old)”组合实现重命名（后端无 rename 接口时最稳）
+        self.renameConfigRequested.emit(old_name, new_name, old_expr, old_comment)
+
+    def _edit_cfg_comment(self, item: QTreeWidgetItem):
+        if self._cfg_delete_mode:
+            return
+        data = self._get_cfg_data(item)
+        name = data.get("name", item.text(0))
+        comment = data.get("comment", "") or ""
+
+        dlg = CommentEditDialog("修改注释", comment=comment, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_comment = dlg.get_comment()
+
+        # 交给后端：configlib.comment(name, comment)
+        self.commentConfigRequested.emit(name, new_comment)
+
+    def _show_cfg_refs(self, item: QTreeWidgetItem):
+        if self._cfg_delete_mode:
+            return
+        data = self._get_cfg_data(item)
+        name = data.get("name", item.text(0))
+        # 交给后端：拉取 forward + reverse
+        self.listRefRequested.emit(name)
+
+    def _on_listref_result(self, name: str, forward: dict, reverse: dict, err_msg: str):
+        if err_msg:
+            QMessageBox.warning(self, "查看引用失败", f"配置项：{name}\n\n失败原因：{err_msg}")
+            return
+        dlg = ConfigRefDialog(name, forward=forward or {}, reverse=reverse or {}, parent=self)
+        dlg.exec()
 
     def _on_cfg_item_hover(self, item: QTreeWidgetItem, column: int):
         comment = (self._get_cfg_data(item).get("comment", "") or "（无注释）")
@@ -507,30 +734,61 @@ class ExplorerDock(QWidget):
             return
         if not (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
             return
-        cur = item.checkState(0)
-        item.setCheckState(0, Qt.CheckState.Unchecked if cur == Qt.CheckState.Checked else Qt.CheckState.Checked)
+
+        # 当前点击想要的目标状态：若已勾选则取消，否则勾选
+        want_checked = (item.checkState(0) != Qt.CheckState.Checked)
+
+        # ✅ 单选：先全部取消
+        for it in self._iter_cfg_items():
+            it.setCheckState(0, Qt.CheckState.Unchecked)
+
+        # 再按需设置当前项
+        item.setCheckState(0, Qt.CheckState.Checked if want_checked else Qt.CheckState.Unchecked)
 
     def _delete_checked_cfg_items(self):
         if not self._cfg_delete_mode:
             return
+
         checked = [it for it in self._iter_cfg_items() if it.checkState(0) == Qt.CheckState.Checked]
         if not checked:
             QMessageBox.information(self, "未选择", "请勾选要删除的配置项。")
             return
 
-        names = [it.text(0) for it in checked]
+        # ✅ 强制单选（防御：即便未来哪里没控住也只取第一个）
+        it = checked[0]
+        name = it.text(0)
+
         confirm = QMessageBox.question(
             self, "确认删除",
-            "将删除以下配置项：\n\n" + "\n".join(names) + "\n\n是否继续？",
+            f"将删除配置项：\n\n{name}\n\n是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
-        for it in checked:
-            idx = self.global_cfg.indexOfTopLevelItem(it)
-            if idx >= 0:
-                self.global_cfg.takeTopLevelItem(idx)
+        self._lock_cfg_delete_ui(True)
+        self.removeConfigRequested.emit([name])  # 仍复用 list 信号，长度=1
+
+    def _apply_cfg_remove_result(self, success_names: list[str], failed: list[tuple[str, str]]):
+        # 解除锁
+        self._lock_cfg_delete_ui(False)
+
+        # 失败：弹窗显示原因；用户点 OK 后退出删除模式
+        if failed:
+            # 单删场景：只取第一个
+            n, msg = failed[0]
+            QMessageBox.warning(self, "删除失败", f"配置项：{n}\n\n失败原因：{msg}")
+            self._exit_cfg_delete_mode()
+            return
+
+        # 成功：从树上移除并退出删除模式
+        if success_names:
+            name = success_names[0]
+            it = self._find_cfg_by_name(name)
+            if it is not None:
+                idx = self.global_cfg.indexOfTopLevelItem(it)
+                if idx >= 0:
+                    self.global_cfg.takeTopLevelItem(idx)
 
         self._exit_cfg_delete_mode()
 

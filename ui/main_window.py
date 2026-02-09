@@ -435,8 +435,18 @@ class MainWindow(QMainWindow):
         self.explorer.openHarnessRequested.connect(self.open_harness_detail_tab)
         self.explorer.openModuleRequested.connect(self.open_module_canvas_tab)
 
-        # 【新增连接】连接添加配置的请求信号
+        # 【连接】连接添加配置的请求信号
         self.explorer.addConfigRequested.connect(self.on_add_config_request)
+        # 【连接】连接删除配置的请求信号
+        self.explorer.removeConfigRequested.connect(self.on_remove_config_request)
+        # 【连接】连接update配置的请求信号
+        self.explorer.updateConfigRequested.connect(self.on_update_config_request)
+        # 【连接】连接注释配置的请求信号
+        self.explorer.commentConfigRequested.connect(self.on_comment_config_request)
+        # 【连接】连接重命名配置的请求信号
+        self.explorer.renameConfigRequested.connect(self.on_rename_config_request)
+        # 【连接】回传引用list的配置的请求信号
+        self.explorer.listRefRequested.connect(self.on_listref_request)
 
         self.history = HistoryDock()
         self._add_dock(self.history, Qt.DockWidgetArea.RightDockWidgetArea)
@@ -466,6 +476,241 @@ class MainWindow(QMainWindow):
 
         # 最后检查初始项目状态
         self.check_initial_project_status()
+
+    def on_update_config_request(self, name: str, value: str):
+        if not self._current_project_name:
+            QMessageBox.warning(self, "操作失败", "当前未打开任何项目，无法更新配置。")
+            return
+        try:
+            args = [
+                Arg(index=0, name="name", value=name),
+                Arg(index=1, name="value", value=value),
+            ]
+            resp = self.control.call("configlib.update", args)
+            self.bottom.output.append(f"[Request: configlib.update] Name: {name}, Result: {_json_dumps(resp)}\n")
+
+            if resp.get("code") == 0:
+                self.statusBar().showMessage(f"配置项 '{name}' 更新成功。", 3000)
+                self.refresh_project_data()
+            else:
+                QMessageBox.warning(self, "更新失败", f"服务器返回错误：\n{resp.get('msg', '未知错误')}")
+        except Exception as e:
+            self.bottom.logs.append(f"[Critical Error] Failed to execute 'configlib.update': {e}\n")
+            QMessageBox.critical(self, "通讯错误", "无法连接到服务器。")
+
+    def on_comment_config_request(self, name: str, comment: str):
+        if not self._current_project_name:
+            QMessageBox.warning(self, "操作失败", "当前未打开任何项目，无法修改注释。")
+            return
+        try:
+            args = [Arg(index=0, name="name", value=name)]
+            # comment 允许留空表示清空注释，这里传空字符串即可
+            args.append(Arg(index=1, name="comment", value=comment))
+
+            resp = self.control.call("configlib.comment", args)
+            self.bottom.output.append(f"[Request: configlib.comment] Name: {name}, Result: {_json_dumps(resp)}\n")
+
+            if resp.get("code") == 0:
+                self.statusBar().showMessage(f"配置项 '{name}' 注释更新成功。", 3000)
+                self.refresh_project_data()
+            else:
+                QMessageBox.warning(self, "修改注释失败", f"服务器返回错误：\n{resp.get('msg', '未知错误')}")
+        except Exception as e:
+            self.bottom.logs.append(f"[Critical Error] Failed to execute 'configlib.comment': {e}\n")
+            QMessageBox.critical(self, "通讯错误", "无法连接到服务器。")
+
+    def on_listref_request(self, name: str):
+        if not self._current_project_name:
+            QMessageBox.warning(self, "操作失败", "当前未打开任何项目，无法查看引用。")
+            self.explorer.listRefResult.emit(name, {}, {}, "当前未打开项目")
+            return
+
+        try:
+            # forward
+            args_f = [Arg(index=0, name="name", value=name)]
+            resp_f = self.control.call("configlib.listref", args_f)
+            self.bottom.output.append(f"[Request: configlib.listref] Name: {name}, Result: {_json_dumps(resp_f)}\n")
+
+            if resp_f.get("code") != 0:
+                self.explorer.listRefResult.emit(name, {}, {}, resp_f.get("msg", "未知错误"))
+                return
+
+            forward = resp_f.get("list_results", {}) or {
+                "names": resp_f.get("names", []),
+                "childs": resp_f.get("childs", []),
+                "values": resp_f.get("values", []),
+                "realvalues": resp_f.get("realvalues", []),
+            }
+
+            # reverse
+            args_r = [
+                Arg(index=0, name="name", value=name),
+                Arg(index=1, name="reverse", value="true"),
+            ]
+            resp_r = self.control.call("configlib.listref", args_r)
+            self.bottom.output.append(
+                f"[Request: configlib.listref reverse] Name: {name}, Result: {_json_dumps(resp_r)}\n")
+
+            if resp_r.get("code") != 0:
+                self.explorer.listRefResult.emit(name, forward, {}, resp_r.get("msg", "未知错误"))
+                return
+
+            reverse = resp_r.get("list_results", {}) or {
+                "names": resp_r.get("names", []),
+                "childs": resp_r.get("childs", []),
+                "values": resp_r.get("values", []),
+                "realvalues": resp_r.get("realvalues", []),
+            }
+
+            self.explorer.listRefResult.emit(name, forward, reverse, "")
+        except Exception as e:
+            self.bottom.logs.append(f"[Critical Error] Failed to execute 'configlib.listref': {e}\n")
+            self.explorer.listRefResult.emit(name, {}, {}, "通讯错误")
+
+    def on_rename_config_request(self, old_name: str, new_name: str, old_value: str, old_comment: str):
+        if not self._current_project_name:
+            QMessageBox.warning(self, "操作失败", "当前未打开任何项目，无法重命名配置。")
+            return
+
+        try:
+            # 1) add new
+            args_add = [
+                Arg(index=0, name="name", value=new_name),
+                Arg(index=1, name="value", value=old_value),
+                Arg(index=2, name="comment", value=old_comment),
+            ]
+            resp_add = self.control.call("configlib.add", args_add)
+            self.bottom.output.append(
+                f"[Request: configlib.add(rename)] New: {new_name}, Result: {_json_dumps(resp_add)}\n")
+
+            if resp_add.get("code") != 0:
+                QMessageBox.warning(self, "重命名失败", f"创建新名称失败：\n{resp_add.get('msg', '未知错误')}")
+                return
+
+            # 2) remove old
+            args_rm = [Arg(index=0, name="name", value=old_name)]
+            resp_rm = self.control.call("configlib.remove", args_rm)
+            self.bottom.output.append(
+                f"[Request: configlib.remove(rename)] Old: {old_name}, Result: {_json_dumps(resp_rm)}\n")
+
+            if resp_rm.get("code") != 0:
+                # rollback：删掉 new
+                args_rb = [Arg(index=0, name="name", value=new_name)]
+                resp_rb = self.control.call("configlib.remove", args_rb)
+                self.bottom.output.append(
+                    f"[Rollback: configlib.remove] New: {new_name}, Result: {_json_dumps(resp_rb)}\n")
+                QMessageBox.warning(self, "重命名失败",
+                                    f"删除旧名称失败：\n{resp_rm.get('msg', '未知错误')}\n\n已回滚新名称。")
+                return
+
+            self.statusBar().showMessage(f"已重命名：{old_name} → {new_name}", 3000)
+            self.refresh_project_data()
+
+        except Exception as e:
+            self.bottom.logs.append(f"[Critical Error] Failed to rename config: {e}\n")
+            QMessageBox.critical(self, "通讯错误", "无法连接到服务器。")
+
+    def on_remove_config_request(self, names: list[str]):
+        if not self._current_project_name:
+            QMessageBox.warning(self, "操作失败", "当前未打开任何项目，无法删除配置。")
+            # 回推空结果，解除 Explorer 锁
+            self.explorer.removeConfigResult.emit([], [(n, "当前未打开项目") for n in (names or [])])
+            return
+
+        if not names:
+            self.explorer.removeConfigResult.emit([], [])
+            return
+
+        failed: list[tuple[str, str]] = []
+        success: list[str] = []
+
+        try:
+            for name in names:
+                args = [Arg(index=0, name="name", value=name)]
+                resp = self.control.call("configlib.remove", args)
+
+                res_str = _json_dumps(resp)
+                self.bottom.output.append(f"[Request: configlib.remove] Name: {name}, Result: {res_str}\n")
+
+                if resp.get("code") == 0:
+                    success.append(name)
+                else:
+                    msg = resp.get("msg", "未知错误")
+                    failed.append((name, msg))
+
+            # ✅ 回推给 ExplorerDock，让其移除成功项、保留失败项并提示
+            self.explorer.removeConfigResult.emit(success, failed)
+
+            # 可选：如果你更想保证“权威来自后端”，可再 refresh 一次
+            # 但注意：refresh 会重建树，可能会让失败项的勾选状态丢失
+            # 所以推荐：只在需要时 refresh，比如成功项较多或后端可能隐式改名/联动
+            # self.refresh_project_data()
+
+            if success and not failed:
+                self.statusBar().showMessage(f"已删除 {len(success)} 个配置项。", 3000)
+
+        except Exception as e:
+            error_msg = f"[Critical Error] Failed to execute 'configlib.remove': {str(e)}"
+            print(error_msg)
+            self.bottom.logs.append(error_msg + "\n")
+            QMessageBox.critical(self, "通讯错误", "无法连接到服务器。")
+
+            # 回推“全部失败”，解除 Explorer 锁
+            self.explorer.removeConfigResult.emit([], [(n, "通讯错误") for n in names])
+
+    def _apply_cfg_remove_result(self, success_names: list[str], failed: list[tuple[str, str]]):
+        """
+        MainWindow 删除后回调这里：
+        - 成功：从树里移除
+        - 失败：保留勾选并提示原因（可选高亮）
+        - 全部成功：退出删除模式
+        - 有失败：保持删除模式，方便继续操作
+        """
+        # 解除锁定
+        self._lock_cfg_delete_ui(False)
+
+        # 1) 先清理“高亮状态”（可选）
+        #    用前景色/背景色做失败高亮
+        for it in self._iter_cfg_items():
+            it.setForeground(0, Qt.GlobalColor.black)
+            it.setBackground(0, Qt.GlobalColor.transparent)
+
+        failed_map = {n: m for n, m in (failed or [])}
+
+        # 2) 成功项：从树中移除
+        #    注意：删除 topLevelItem 时要倒序删除，避免 index 变化
+        to_remove_indices = []
+        for i in range(self.global_cfg.topLevelItemCount()):
+            it = self.global_cfg.topLevelItem(i)
+            if it and it.text(0) in success_names:
+                to_remove_indices.append(i)
+        for idx in reversed(to_remove_indices):
+            self.global_cfg.takeTopLevelItem(idx)
+
+        # 3) 失败项：保留勾选 + 高亮 + tooltip 追加失败原因
+        if failed_map:
+            for it in self._iter_cfg_items():
+                n = it.text(0)
+                if n in failed_map:
+                    it.setCheckState(0, Qt.CheckState.Checked)  # 保持勾选
+                    it.setForeground(0, Qt.GlobalColor.red)
+                    it.setBackground(0, Qt.GlobalColor.transparent)
+                    old_tip = it.toolTip(0) or ""
+                    it.setToolTip(0, f"{old_tip}\n\n[删除失败] {failed_map[n]}".strip())
+
+            # 弹窗汇总失败原因
+            fail_text = "\n".join([f"- {n}: {m}" for n, m in failed])
+            QMessageBox.warning(
+                self,
+                "删除失败（部分）",
+                f"以下配置项删除失败：\n\n{fail_text}\n\n"
+                "常见原因：配置项被引用或来自导入库。"
+            )
+            # ✅ 有失败：不退出删除模式
+            return
+
+        # 4) 全部成功：退出删除模式
+        self._exit_cfg_delete_mode()
 
     # 【新增方法】处理添加配置请求
     def on_add_config_request(self, name: str, value: str, comment: str):
@@ -666,8 +911,7 @@ class MainWindow(QMainWindow):
             text="项目",
             items=[
                 ("新项目", self.on_new_project),
-                ("打开项目列表", self.on_open_file_list),
-                ("打开项目", self.on_open_file),
+                ("打开项目", self.on_open_file_list),
                 ("保存项目", self.on_save_all),
                 ("导出", self.on_export_harness),
                 ("关闭当前项目", self.on_close_opened)
