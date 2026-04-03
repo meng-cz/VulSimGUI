@@ -19,17 +19,22 @@ if sys.platform == "win32" and not getattr(sys, "frozen", False):
 
 import resources_rc  # 注册 Qt 资源
 
+from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import QApplication
 from ui.main_window import MainWindow
 
 QSS_PATH = resource_path("ui/theme.qss")
+LIGHT_QSS_PATH = resource_path("ui/theme_light.qss")
 
 def main():
     app = QApplication(sys.argv)
+    settings = QSettings("VulSim", "HyperIDE")
+    theme_name = str(settings.value("ui/theme_name", "dark") or "dark")
+    qss_path = LIGHT_QSS_PATH if theme_name == "light" else QSS_PATH
     try:
-        app.setStyleSheet(QSS_PATH.read_text(encoding="utf-8"))
+        app.setStyleSheet(qss_path.read_text(encoding="utf-8"))
     except Exception as e:
-        print(f"[WARN] Failed to load QSS: {QSS_PATH} -> {e}")
+        print(f"[WARN] Failed to load QSS: {qss_path} -> {e}")
 
     w = MainWindow()
     w.show()

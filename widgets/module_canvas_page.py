@@ -5,13 +5,15 @@ import math
 from typing import List, Optional, Callable
 
 from PyQt6.QtCore import Qt, QPointF, QRectF, pyqtSignal, QTimer
-from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QPainterPath
+from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QPainterPath, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QToolButton, QPushButton,
     QGraphicsView, QGraphicsScene, QGraphicsItem, QGraphicsPathItem,
     QGraphicsSimpleTextItem,
     QMenu, QDialog, QDialogButtonBox, QLabel, QTableWidget, QTableWidgetItem,
-    QHeaderView, QMessageBox, QTextEdit, QFormLayout, QLineEdit
+    QHeaderView, QMessageBox, QTextEdit, QFormLayout, QLineEdit, QTabWidget,
+    QComboBox,
+    QTreeWidget, QTreeWidgetItem
 )
 
 from .module_dialog import ModuleDialog  # noqa: F401
@@ -27,6 +29,9 @@ MUTED = QColor("#94a3b8")
 PIPE_ACCENT = QColor("#12a2b4")      # 模块实例（偏青）
 PIPELINE_ACCENT = QColor("#a855f7")  # 管道实例（偏紫）
 RPC_ACCENT = QColor("#f59e0b")       # RPC（偏橙）
+CLOCK_ACCENT = QColor("#22c55e")     # 时钟代码块（偏绿）
+
+SELF_INSTANCE = "__self__"
 
 
 # ==========================================================
@@ -44,6 +49,21 @@ def _label_with_comment(name: str, comment: str) -> str:
     name = _strip(name)
     comment = _strip(comment)
     return f"{name}({comment})" if comment else name
+
+
+def _is_self_instance_name(name: str) -> bool:
+    return _strip(name) in ("", "self", SELF_INSTANCE, "本模块")
+
+
+def _normalize_instance_name(name: str) -> str:
+    return SELF_INSTANCE if _is_self_instance_name(name) else _strip(name)
+
+
+def _first_line(text: str) -> str:
+    stripped = _strip(text)
+    if not stripped:
+        return ""
+    return stripped.splitlines()[0]
 
 
 # ==========================================================
@@ -166,6 +186,101 @@ class PipeInstanceDialog(QDialog):
         }
 
 
+class ClockBlockDialog(QDialog):
+    """创建/编辑 时钟代码块：名称 + 注释。代码正文由独立代码页负责。"""
+    def __init__(self, title: str, data: Optional[dict] = None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(560, 260)
+
+        data = data or {}
+
+        root = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.name_edit = QLineEdit(_strip(data.get("name", "")))
+        self.name_edit.setPlaceholderText("例如：tick_main")
+
+        self.comment_edit = QTextEdit()
+        self.comment_edit.setPlaceholderText("可选：用于画布悬浮预览的注释")
+        self.comment_edit.setFixedHeight(120)
+        self.comment_edit.setPlainText(_strip(data.get("comment", "")))
+
+        form.addRow("代码块名：", self.name_edit)
+        form.addRow("注释：", self.comment_edit)
+        root.addLayout(form)
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
+
+    def get_data(self) -> dict:
+        return {
+            "name": self.name_edit.text().strip(),
+            "comment": self.comment_edit.toPlainText().strip(),
+        }
+
+
+class PortEditDialog(QDialog):
+    """编辑单个模块边界端口。"""
+    def __init__(self, title: str, port_kind: str, data: Optional[dict] = None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(520, 280)
+
+        self._port_kind = "rpc" if _strip(port_kind) == "rpc" else "pipe"
+        data = data or {}
+
+        root = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.dir_combo = QComboBox()
+        if self._port_kind == "rpc":
+            options = [("请求(req)", "req"), ("服务(serv)", "serv")]
+        else:
+            options = [("输入(in)", "in"), ("输出(out)", "out")]
+        for label, value in options:
+            self.dir_combo.addItem(label, value)
+        current_dir = _strip(data.get("dir", "")) or options[0][1]
+        idx = max(0, self.dir_combo.findData(current_dir))
+        self.dir_combo.setCurrentIndex(idx)
+
+        self.name_edit = QLineEdit(_strip(data.get("name", "")))
+        self.name_edit.setPlaceholderText("例如：req_main / out_data")
+
+        self.comment_edit = QLineEdit(_strip(data.get("comment", "")))
+        self.comment_edit.setPlaceholderText("可选：注释")
+
+        self.dtype_edit = QLineEdit(_strip(data.get("dtype", "")))
+        if self._port_kind == "rpc":
+            self.dtype_edit.setEnabled(False)
+            self.dtype_edit.setPlaceholderText("请求/服务端口当前不使用该字段")
+        else:
+            self.dtype_edit.setPlaceholderText("例如：AXI_Lite_Req")
+
+        form.addRow("方向：", self.dir_combo)
+        form.addRow("端口名：", self.name_edit)
+        form.addRow("注释：", self.comment_edit)
+        form.addRow("数据类型：", self.dtype_edit)
+        root.addLayout(form)
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
+
+    def get_data(self) -> dict:
+        return {
+            "dir": _strip(self.dir_combo.currentData() or ""),
+            "name": self.name_edit.text().strip(),
+            "comment": self.comment_edit.text().strip(),
+            "dtype": self.dtype_edit.text().strip() if self._port_kind == "pipe" else "",
+        }
+
+
 # ==========================================================
 # Scene / Items (Ports, Nodes, Edges)
 # ==========================================================
@@ -183,6 +298,7 @@ class PortDot(QGraphicsItem):
         kind: str,
         direction: str,
         owner_kind: str,
+        owner_name: str,
         accent: QColor,
         radius: float = 4.0,
     ):
@@ -191,6 +307,7 @@ class PortDot(QGraphicsItem):
         self.port_kind = kind
         self.direction = direction
         self.owner_kind = owner_kind
+        self.owner_name = owner_name
         self.accent = accent
         self.radius = radius
 
@@ -278,6 +395,90 @@ class PortDot(QGraphicsItem):
             for e in list(self.edges):
                 e.update_path()
         return super().itemChange(change, value)
+
+
+class LinkAnchorItem(QGraphicsItem):
+    """
+    轻量连接锚点：
+    - 不参与交互，仅用于阻塞传递/更新次序等“非端口级”连线的定位
+    - 作为节点/边界的子 item，跟随父 item 移动
+    """
+    def __init__(self, parent: QGraphicsItem, radius: float = 3.0):
+        super().__init__(parent)
+        self.radius = radius
+        self.edges: List["EdgeItem"] = []
+
+        self.setZValue(3)
+        self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemHasNoContents, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsScenePositionChanges, True)
+
+    def boundingRect(self) -> QRectF:
+        r = float(self.radius)
+        return QRectF(-r, -r, r * 2.0, r * 2.0)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        return
+
+    def scene_center(self) -> QPointF:
+        return self.mapToScene(QPointF(0, 0))
+
+    def add_edge(self, edge: "EdgeItem"):
+        if edge not in self.edges:
+            self.edges.append(edge)
+
+    def remove_edge(self, edge: "EdgeItem"):
+        if edge in self.edges:
+            self.edges.remove(edge)
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemScenePositionHasChanged:
+            for e in list(self.edges):
+                e.update_path()
+        return super().itemChange(change, value)
+
+
+class EdgeEndpointHandle(QGraphicsItem):
+    """连接线选中后显示的端点拖拽手柄。"""
+    def __init__(self, edge: "EdgeItem", side: str, radius: float = 5.0):
+        super().__init__()
+        self.edge = edge
+        self.side = side
+        self.radius = radius
+        self._hover = False
+
+        self.setZValue(70)
+        self.setAcceptHoverEvents(True)
+        self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+
+    def boundingRect(self) -> QRectF:
+        r = float(self.radius)
+        return QRectF(-r, -r, r * 2.0, r * 2.0)
+
+    def paint(self, painter: QPainter, option, widget=None):
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        accent = QColor(self.edge._accent)
+        fill = accent.lighter(145) if self._hover else accent
+        painter.setPen(QPen(TEXT if self._hover else accent.darker(130), 1.4))
+        painter.setBrush(QBrush(fill))
+        painter.drawEllipse(self.boundingRect())
+        painter.restore()
+
+    def hoverEnterEvent(self, event):
+        self._hover = True
+        self.update()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self._hover = False
+        self.update()
+        super().hoverLeaveEvent(event)
+
+    def sync_pos(self):
+        self.setPos(self.edge.endpoint_scene_pos(self.side))
 
 
 class PortHandle(QGraphicsItem):
@@ -408,18 +609,39 @@ class GridScene(QGraphicsScene):
 
 
 class EdgeItem(QGraphicsPathItem):
-    """Manhattan 连接线：支持 preview（未固定目标前的临时线）"""
-    def __init__(self, out_port: PortDot, in_port: Optional[PortDot] = None, accent: QColor = PRIMARY):
+    """连接线：支持 preview（未固定目标前的临时线）"""
+    def __init__(
+        self,
+        out_port: PortDot,
+        in_port: Optional[PortDot] = None,
+        accent: QColor = PRIMARY,
+        line_style: str = "manhattan",
+        line_width: float = 2.0,
+        tooltip: str = "",
+        on_delete: Optional[Callable[["EdgeItem"], None]] = None,
+        on_edit: Optional[Callable[["EdgeItem"], None]] = None,
+    ):
         super().__init__()
         self.out_port = out_port
         self.in_port = in_port
         self._tmp_end: Optional[QPointF] = None
         self._accent = accent
+        self._line_style = line_style
+        self._line_width = float(line_width)
+        self._tooltip = tooltip
+        self._on_delete = on_delete
+        self._on_edit = on_edit
+        self.conn_group = ""
+        self.conn_key = ""
+        self.conn_record: dict = {}
+        self._hover = False
+        self._endpoint_handles: dict[str, EdgeEndpointHandle] = {}
 
         self.setZValue(2)
-        self.setPen(QPen(accent, 2))
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setAcceptHoverEvents(True)
+        self.setToolTip(tooltip)
+        self._apply_pen()
 
         out_port.add_edge(self)
         if in_port:
@@ -437,6 +659,13 @@ class EdgeItem(QGraphicsPathItem):
         in_port.add_edge(self)
         self.update_path()
 
+    def endpoint_scene_pos(self, side: str) -> QPointF:
+        if _strip(side) == "src":
+            return self.out_port.scene_center()
+        if self.in_port is not None:
+            return self.in_port.scene_center()
+        return self._tmp_end if self._tmp_end is not None else self.out_port.scene_center()
+
     def update_path(self):
         a = self.out_port.scene_center()
         if self.in_port is not None:
@@ -444,33 +673,115 @@ class EdgeItem(QGraphicsPathItem):
         else:
             b = self._tmp_end if self._tmp_end is not None else a
 
-        mid_x = (a.x() + b.x()) / 2.0
         path = QPainterPath(a)
-        path.lineTo(QPointF(mid_x, a.y()))
-        path.lineTo(QPointF(mid_x, b.y()))
-        path.lineTo(b)
+        if self._line_style == "straight":
+            path.lineTo(b)
+        else:
+            mid_x = (a.x() + b.x()) / 2.0
+            path.lineTo(QPointF(mid_x, a.y()))
+            path.lineTo(QPointF(mid_x, b.y()))
+            path.lineTo(b)
         self.setPath(path)
+        self.sync_endpoint_handles()
+
+    def apply_meta(self, meta: dict):
+        self.conn_group = _strip(meta.get("group", ""))
+        self.conn_key = _strip(meta.get("key", ""))
+        self.conn_record = dict(meta.get("record") or {})
+        self._line_style = _strip(meta.get("line_style", "")) or "manhattan"
+        if isinstance(meta.get("line_width"), (int, float)):
+            self._line_width = float(meta["line_width"])
+        tooltip = _strip(meta.get("tooltip", ""))
+        if tooltip:
+            self._tooltip = tooltip
+            self.setToolTip(tooltip)
+        accent = meta.get("accent")
+        if isinstance(accent, QColor):
+            self._accent = accent
+        self._apply_pen()
+        self.update_path()
+
+    def _apply_pen(self):
+        color = QColor(self._accent)
+        width = self._line_width
+        if self.isSelected() or self._hover:
+            color = color.lighter(145)
+            width += 0.8
+        self.setPen(QPen(color, width))
+        self.sync_endpoint_handles()
+
+    def clear_endpoint_handles(self):
+        for handle in list(self._endpoint_handles.values()):
+            try:
+                sc = handle.scene()
+                if sc is not None:
+                    sc.removeItem(handle)
+            except RuntimeError:
+                pass
+        self._endpoint_handles.clear()
+
+    def sync_endpoint_handles(self):
+        sc = self.scene()
+        if (
+            sc is None
+            or not self.isVisible()
+            or not self.isSelected()
+            or self.in_port is None
+            or not self.conn_group
+        ):
+            self.clear_endpoint_handles()
+            return
+
+        for side in ("src", "dst"):
+            handle = self._endpoint_handles.get(side)
+            if handle is None:
+                handle = EdgeEndpointHandle(self, side)
+                self._endpoint_handles[side] = handle
+                sc.addItem(handle)
+            handle.sync_pos()
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self._apply_pen()
+        if change == QGraphicsItem.GraphicsItemChange.ItemSceneHasChanged:
+            self.sync_endpoint_handles()
+        return super().itemChange(change, value)
 
     def hoverEnterEvent(self, event):
-        if not self.isSelected():
-            self.setPen(QPen(self._accent.lighter(140), 2))
+        self._hover = True
+        self._apply_pen()
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
-        if self.isSelected():
-            self.setPen(QPen(self._accent.lighter(140), 3))
-        else:
-            self.setPen(QPen(self._accent, 2))
+        self._hover = False
+        self._apply_pen()
         super().hoverLeaveEvent(event)
 
     def contextMenuEvent(self, event):
         menu = QMenu()
-        act_del = menu.addAction("Delete Connection")
+        act_edit = menu.addAction("编辑连接")
+        act_edit.setEnabled(self._on_edit is not None and bool(self.conn_group) and bool(self.conn_key))
+        act_del = menu.addAction("删除连接")
         act = menu.exec(event.screenPos().toPoint())
+        if act == act_edit:
+            if self._on_edit is not None:
+                self._on_edit(self)
+            return
         if act == act_del:
-            self.delete_self()
+            if self._on_delete is not None:
+                self._on_delete(self)
+            else:
+                self.delete_self()
+
+    def mouseDoubleClickEvent(self, event):
+        if self._on_edit is not None and self.conn_group and self.conn_key:
+            self._on_edit(self)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def delete_self(self):
+        self.clear_endpoint_handles()
         self.out_port.remove_edge(self)
         if self.in_port:
             self.in_port.remove_edge(self)
@@ -505,6 +816,8 @@ class BoundaryItem(QGraphicsItem):
         self._building: bool = False
         self._on_moved_raw = None
         self._on_moved = None
+        self.center_anchor = LinkAnchorItem(self)
+        self.center_anchor.setPos(self._rect.center())
 
     def boundingRect(self) -> QRectF:
         return self._rect
@@ -530,7 +843,8 @@ class BoundaryItem(QGraphicsItem):
         # 再删 handles（会带走其子 dot/text）
         for h in list(self.handles):
             try:
-                sc.removeItem(h)
+                if h.scene() is sc:
+                    sc.removeItem(h)
             except RuntimeError:
                 pass
 
@@ -609,7 +923,16 @@ class BoundaryItem(QGraphicsItem):
             comment = _strip(it.get("comment", ""))
             label = _label_with_comment(name, comment)
 
-            dot = PortDot(parent=None, name=name, kind=kind, direction=direction, owner_kind=owner_kind, accent=accent, radius=4.2)
+            dot = PortDot(
+                parent=None,
+                name=name,
+                kind=kind,
+                direction=direction,
+                owner_kind=owner_kind,
+                owner_name=SELF_INSTANCE,
+                accent=accent,
+                radius=4.2,
+            )
 
             handle = PortHandle(
                 parent=self,
@@ -631,8 +954,6 @@ class BoundaryItem(QGraphicsItem):
                 handle_pos = QPointF(x, y) - PortHandle.DOT_OFFSET
 
             handle.setPos(handle_pos)
-            sc.addItem(handle)
-
             self.port_dots.append(dot)
             self.handles.append(handle)
 
@@ -657,7 +978,16 @@ class BoundaryItem(QGraphicsItem):
             comment = _strip(it.get("comment", ""))
             label = _label_with_comment(name, comment)
 
-            dot = PortDot(parent=None, name=name, kind=kind, direction=direction, owner_kind=owner_kind, accent=accent, radius=4.2)
+            dot = PortDot(
+                parent=None,
+                name=name,
+                kind=kind,
+                direction=direction,
+                owner_kind=owner_kind,
+                owner_name=SELF_INSTANCE,
+                accent=accent,
+                radius=4.2,
+            )
 
             handle = PortHandle(
                 parent=self,
@@ -678,8 +1008,6 @@ class BoundaryItem(QGraphicsItem):
                 handle_pos = QPointF(x, y) - PortHandle.DOT_OFFSET
 
             handle.setPos(handle_pos)
-            sc.addItem(handle)
-
             self.port_dots.append(dot)
             self.handles.append(handle)
 
@@ -715,6 +1043,8 @@ class BaseNodeItem(QGraphicsItem):
         )
         self.setAcceptHoverEvents(True)
         self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
+        self.center_anchor = LinkAnchorItem(self)
+        self._update_center_anchor()
 
         self.ports: List[PortDot] = []
         self.labels: List[QGraphicsSimpleTextItem] = []
@@ -748,6 +1078,13 @@ class BaseNodeItem(QGraphicsItem):
     def set_payload(self, payload: dict):
         self.payload = payload or {}
 
+    def _update_center_anchor(self):
+        self.center_anchor.setPos(self.w / 2.0, self.h / 2.0)
+
+    def clear_anchor_edges(self):
+        for edge in list(self.center_anchor.edges):
+            edge.delete_self()
+
     # --------------------------
     # Ports: build / sync / layout
     # --------------------------
@@ -764,8 +1101,8 @@ class BaseNodeItem(QGraphicsItem):
         # 删除 labels
         for t in list(self.labels):
             try:
-                t.setParentItem(None)
-                sc.removeItem(t)
+                if t.scene() is sc:
+                    sc.removeItem(t)
             except RuntimeError:
                 pass
 
@@ -774,7 +1111,8 @@ class BaseNodeItem(QGraphicsItem):
             for e in list(p.edges):
                 e.delete_self()
             try:
-                sc.removeItem(p)
+                if p.scene() is sc:
+                    sc.removeItem(p)
             except RuntimeError:
                 pass
 
@@ -822,9 +1160,18 @@ class BaseNodeItem(QGraphicsItem):
         # 创建 dots + labels（位置稍后 relayout）
         def _mk(kind: str, direction: str, name: str, comment: str, accent: QColor, align: str):
             key = (kind, direction, name)
+            owner_name = _strip(self.payload.get("inst", ""))
 
-            dot = PortDot(self, name=name, kind=kind, direction=direction, owner_kind=self.node_kind, accent=accent, radius=3.5)
-            sc.addItem(dot)
+            dot = PortDot(
+                self,
+                name=name,
+                kind=kind,
+                direction=direction,
+                owner_kind=self.node_kind,
+                owner_name=owner_name,
+                accent=accent,
+                radius=3.5,
+            )
             self.ports.append(dot)
             self._port_map[key] = dot
 
@@ -847,6 +1194,8 @@ class BaseNodeItem(QGraphicsItem):
             _mk("rpc", "serv", _strip(r.get("name")), _strip(r.get("comment", "")), RPC_ACCENT, "bottom")
 
     def _relayout_ports(self):
+        self._update_center_anchor()
+
         pipe_ports = self._pipe_ports_src
         rpcs = self._rpcs_src
 
@@ -1113,6 +1462,49 @@ class PipeInstNode(BaseNodeItem):
         super().__init__(title=title, w=240, h=130, accent=PIPELINE_ACCENT, node_kind="pipe_inst")
 
 
+class ClockBlockNode(BaseNodeItem):
+    MIN_W = 200
+    MIN_H = 90
+
+    def __init__(self, title: str):
+        super().__init__(title=title, w=240, h=110, accent=CLOCK_ACCENT, node_kind="clock_block")
+
+    def paint(self, painter: QPainter, option, widget=None):
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        border_pen = QPen(self.accent if self.isSelected() else BORDER, 2 if self.isSelected() else 1)
+        painter.setPen(border_pen)
+        painter.setBrush(QBrush(QColor(PANEL)))
+        painter.drawRoundedRect(self.boundingRect(), 8, 8)
+
+        title_h = 28
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(self.accent.red(), self.accent.green(), self.accent.blue(), 55)))
+        painter.drawRoundedRect(QRectF(0, 0, self.w, title_h), 8, 8)
+        painter.drawRect(QRectF(0, title_h - 8, self.w, 8))
+
+        painter.setPen(QPen(TEXT))
+        painter.drawText(QRectF(10, 0, self.w - 100, title_h), Qt.AlignmentFlag.AlignVCenter, self.title)
+
+        painter.setPen(QPen(MUTED))
+        painter.drawText(
+            QRectF(self.w - 90, 0, 80, title_h),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+            "CLOCK",
+        )
+
+        preview = _strip((self.payload or {}).get("comment", "")) or "双击打开代码编辑页"
+        painter.setPen(QPen(MUTED))
+        painter.drawText(
+            QRectF(12, 40, self.w - 24, self.h - 52),
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap),
+            preview,
+        )
+
+        painter.restore()
+
+
 # ==========================================================
 # View: Pan/Zoom + Connection interaction + Context menu
 # ==========================================================
@@ -1141,6 +1533,9 @@ class CanvasView(QGraphicsView):
         self._connecting = False
         self._start_port: Optional[PortDot] = None
         self._preview_edge: Optional[EdgeItem] = None
+        self._retargeting_edge: Optional[EdgeItem] = None
+        self._retarget_side: str = ""
+        self._retarget_preview: Optional[EdgeItem] = None
 
         # =========================
         # 右下角缩放提示（悬浮）
@@ -1180,11 +1575,32 @@ class CanvasView(QGraphicsView):
                 return it
         return None
 
-    def _is_output_dir(self, d: str) -> bool:
-        return d in ("out", "req")
+    def _port_target_at_view_pos(self, view_pos) -> Optional[PortDot]:
+        for it in self.items(view_pos):
+            if isinstance(it, PortDot):
+                return it
+            if isinstance(it, PortHandle):
+                return it.dot
+        return None
 
-    def _is_input_dir(self, d: str) -> bool:
-        return d in ("in", "serv")
+    def _edge_handle_at_view_pos(self, view_pos) -> Optional[EdgeEndpointHandle]:
+        for it in self.items(view_pos):
+            if isinstance(it, EdgeEndpointHandle):
+                return it
+        return None
+
+    def _object_target_at_view_pos(self, view_pos, scene_pos: QPointF):
+        for it in self.items(view_pos):
+            if isinstance(it, BaseNodeItem):
+                return it
+            parent = it.parentItem() if isinstance(it, QGraphicsItem) else None
+            while parent is not None:
+                if isinstance(parent, BaseNodeItem):
+                    return parent
+                parent = parent.parentItem()
+        if self._host.boundary_rect.contains(scene_pos):
+            return self._host.boundary
+        return None
 
     def _current_scale(self) -> float:
         # 假设等比缩放（x/y 一样），m11 即当前 scale
@@ -1264,6 +1680,7 @@ class CanvasView(QGraphicsView):
             event.accept()
             return
         if event.key() == Qt.Key.Key_Escape:
+            self._cancel_edge_retarget()
             self._cancel_connection()
             event.accept()
             return
@@ -1283,6 +1700,7 @@ class CanvasView(QGraphicsView):
         if event.button() == Qt.MouseButton.MiddleButton or (
             event.button() == Qt.MouseButton.LeftButton and self._space_down
         ):
+            self._cancel_edge_retarget()
             self._panning = True
             self._pan_start = event.pos()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -1290,8 +1708,16 @@ class CanvasView(QGraphicsView):
             return
 
         if event.button() == Qt.MouseButton.LeftButton:
+            edge_handle = self._edge_handle_at_view_pos(event.pos())
+            if edge_handle is not None:
+                self._begin_edge_retarget(edge_handle, self.mapToScene(event.pos()))
+                event.accept()
+                return
             port = self._port_at_pos_strict(event.pos())
             if port:
+                if self._connecting and port is self._start_port:
+                    event.accept()
+                    return
                 self._on_port_clicked(port, self.mapToScene(event.pos()))
                 event.accept()
                 return
@@ -1309,6 +1735,11 @@ class CanvasView(QGraphicsView):
 
         if self._connecting and self._preview_edge is not None:
             self._preview_edge.set_tmp_end(self.mapToScene(event.pos()))
+            event.accept()
+            return
+
+        if self._retargeting_edge is not None and self._retarget_preview is not None:
+            self._retarget_preview.set_tmp_end(self.mapToScene(event.pos()))
             event.accept()
             return
 
@@ -1331,9 +1762,37 @@ class CanvasView(QGraphicsView):
                 self._on_port_clicked(port, self.mapToScene(event.pos()))
                 event.accept()
                 return
+
+        if event.button() == Qt.MouseButton.LeftButton and self._retargeting_edge is not None:
+            edge = self._retargeting_edge
+            scene_pos = self.mapToScene(event.pos())
+            target = None
+            if edge.conn_group in ("reqsvc_conns", "instpipe_conns"):
+                target = self._port_target_at_view_pos(event.pos())
+            else:
+                target = self._object_target_at_view_pos(event.pos(), scene_pos)
+            if target is not None and self._host.retarget_connection is not None:
+                try:
+                    self._host.retarget_connection(edge, self._retarget_side, target)
+                except Exception:
+                    pass
+            self._cancel_edge_retarget()
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
+        port = self._port_at_pos_strict(event.pos())
+        if port is not None:
+            self._cancel_connection()
+            if self._host.on_port_double_clicked is not None:
+                try:
+                    self._host.on_port_double_clicked(port)
+                except Exception:
+                    pass
+            event.accept()
+            return
+
         item = self.itemAt(event.pos())
         node = item if isinstance(item, BaseNodeItem) else (item.parentItem() if isinstance(item, PortDot) else None)
         if isinstance(node, BaseNodeItem):
@@ -1343,8 +1802,17 @@ class CanvasView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def contextMenuEvent(self, event):
+        if self._retargeting_edge is not None:
+            self._cancel_edge_retarget()
+            event.accept()
+            return
         if self._connecting:
             self._cancel_connection()
+            event.accept()
+            return
+
+        port = self._port_target_at_view_pos(event.pos())
+        if port is not None and self._host.show_port_menu(event.globalPos(), port):
             event.accept()
             return
 
@@ -1361,18 +1829,11 @@ class CanvasView(QGraphicsView):
 
     def _on_port_clicked(self, port: PortDot, scene_pos: QPointF):
         if not self._connecting:
-            if not self._is_output_dir(port.direction):
-                QMessageBox.information(None, "无法开始连接", "请从输出端口（out/req）开始拖拽/点击连接。")
-                return
             self._connecting = True
             self._start_port = port
             self._preview_edge = EdgeItem(out_port=port, in_port=None, accent=port.accent)
             self.scene().addItem(self._preview_edge)
             self._preview_edge.set_tmp_end(scene_pos)
-            return
-
-        if not self._is_input_dir(port.direction):
-            QMessageBox.information(None, "无法连接", "请连接到输入端口（in/serv）。按 Esc 取消。")
             return
 
         if self._start_port is None or self._preview_edge is None:
@@ -1383,7 +1844,15 @@ class CanvasView(QGraphicsView):
             QMessageBox.information(None, "类型不匹配", "RPC 端口只能连接 RPC；PIPE 端口只能连接 PIPE。")
             return
 
-        self._preview_edge.finalize(port)
+        if self._host.resolve_connection is not None:
+            meta = self._host.resolve_connection(self._start_port, port)
+            if not isinstance(meta, dict):
+                return
+            self._preview_edge.finalize(port)
+            self._preview_edge._on_delete = self._host.on_edge_deleted
+            self._preview_edge.apply_meta(meta)
+        else:
+            self._preview_edge.finalize(port)
         self._connecting = False
         self._start_port = None
         self._preview_edge = None
@@ -1395,6 +1864,44 @@ class CanvasView(QGraphicsView):
         self._start_port = None
         self._preview_edge = None
 
+    def _begin_edge_retarget(self, handle: EdgeEndpointHandle, scene_pos: QPointF):
+        edge = handle.edge
+        if edge.in_port is None or not edge.conn_group:
+            return
+
+        self._cancel_connection()
+        self._cancel_edge_retarget()
+
+        self._retargeting_edge = edge
+        self._retarget_side = handle.side
+        fixed_anchor = edge.in_port if handle.side == "src" else edge.out_port
+        edge.clear_endpoint_handles()
+        edge.setVisible(False)
+
+        self._retarget_preview = EdgeItem(
+            out_port=fixed_anchor,
+            in_port=None,
+            accent=edge._accent,
+            line_style=edge._line_style,
+            line_width=edge._line_width,
+            tooltip=edge.toolTip(),
+        )
+        self.scene().addItem(self._retarget_preview)
+        self._retarget_preview.set_tmp_end(scene_pos)
+
+    def _cancel_edge_retarget(self):
+        if self._retarget_preview is not None:
+            self._retarget_preview.delete_self()
+        if self._retargeting_edge is not None:
+            try:
+                self._retargeting_edge.setVisible(True)
+                self._retargeting_edge.sync_endpoint_handles()
+            except RuntimeError:
+                pass
+        self._retargeting_edge = None
+        self._retarget_side = ""
+        self._retarget_preview = None
+
 
 # ==========================================================
 # ModuleCanvas
@@ -1403,11 +1910,15 @@ class ModuleCanvas(QWidget):
     # 类信号
     requestCreateModuleInst = pyqtSignal(QPointF)
     requestCreatePipeInst = pyqtSignal(QPointF)
+    requestCreateClockBlock = pyqtSignal(QPointF)
     requestEditNode = pyqtSignal(object)  # BaseNodeItem
     requestEnterSubmodule = pyqtSignal(str, str)  # inst, module
     requestOpenNode = pyqtSignal(object)  # BaseNodeItem
     requestDeleteNode = pyqtSignal(object)  # BaseNodeItem
     requestNodeResized = pyqtSignal(object)  # BaseNodeItem（用于 ModuleCanvasPage 持久化尺寸）
+    requestPreviewSelection = pyqtSignal(object)
+    requestEditBoundaryPort = pyqtSignal(object)  # PortDot
+    requestDeleteBoundaryPort = pyqtSignal(object)  # PortDot
 
     def __init__(self):
         super().__init__()
@@ -1416,6 +1927,7 @@ class ModuleCanvas(QWidget):
 
         self.scene = GridScene()
         self.scene.setSceneRect(-2500, -2000, 5000, 4000)
+        self.scene.selectionChanged.connect(self._on_scene_selection_changed)
 
         self.view = CanvasView(self.scene, host=self)
         layout.addWidget(self.view)
@@ -1425,6 +1937,10 @@ class ModuleCanvas(QWidget):
         self.scene.addItem(self.boundary)
 
         self.on_parent_port_moved: Optional[Callable[[str, QPointF], None]] = None
+        self.resolve_connection: Optional[Callable[[PortDot, PortDot], Optional[dict]]] = None
+        self.on_edge_deleted: Optional[Callable[[EdgeItem], None]] = None
+        self.on_port_double_clicked: Optional[Callable[[PortDot], bool]] = None
+        self.retarget_connection: Optional[Callable[[EdgeItem, str, object], bool]] = None
         self.parent_port_pos: dict = {}
 
     def set_parent_ports(self, pipe_ports: list[dict], rpcs: list[dict], pos_store: dict | None = None):
@@ -1439,11 +1955,14 @@ class ModuleCanvas(QWidget):
         menu = QMenu()
         act_mod = menu.addAction("创建模块实例")
         act_pipe = menu.addAction("创建管道实例")
+        act_clock = menu.addAction("创建时钟代码块")
         act = menu.exec(global_pos)
         if act == act_mod:
             self.requestCreateModuleInst.emit(scene_pos)
         elif act == act_pipe:
             self.requestCreatePipeInst.emit(scene_pos)
+        elif act == act_clock:
+            self.requestCreateClockBlock.emit(scene_pos)
 
     def show_node_menu(self, global_pos, node: BaseNodeItem):
         payload = node.payload or {}
@@ -1476,8 +1995,53 @@ class ModuleCanvas(QWidget):
                 self.requestDeleteNode.emit(node)
             return
 
+        if kind == "clock_block":
+            act_open = menu.addAction("打开代码")
+            act_edit = menu.addAction("编辑")
+            act_del = menu.addAction("删除")
+            act = menu.exec(global_pos)
+            if act == act_open:
+                self.requestOpenNode.emit(node)
+            elif act == act_edit:
+                self.requestEditNode.emit(node)
+            elif act == act_del:
+                self.requestDeleteNode.emit(node)
+            return
+
         menu.addAction("（无可用操作）")
         menu.exec(global_pos)
+
+    def show_port_menu(self, global_pos, port: PortDot) -> bool:
+        if not isinstance(port, PortDot):
+            return False
+
+        menu = QMenu()
+        act_edit = None
+        act_del = None
+        act_open = None
+
+        if port.owner_kind == "boundary":
+            act_edit = menu.addAction("编辑端口")
+            act_del = menu.addAction("删除端口")
+            if port.port_kind == "rpc" and port.direction == "serv":
+                menu.addSeparator()
+                act_open = menu.addAction("打开服务代码")
+        elif port.owner_kind == "module_inst" and port.port_kind == "rpc" and port.direction == "req":
+            act_open = menu.addAction("打开请求代码")
+        else:
+            return False
+
+        act = menu.exec(global_pos)
+        if act == act_edit:
+            self.requestEditBoundaryPort.emit(port)
+            return True
+        if act == act_del:
+            self.requestDeleteBoundaryPort.emit(port)
+            return True
+        if act == act_open and self.on_port_double_clicked is not None:
+            self.on_port_double_clicked(port)
+            return True
+        return True
 
     def request_edit_node(self, node: BaseNodeItem):
         self.requestEditNode.emit(node)
@@ -1495,6 +2059,10 @@ class ModuleCanvas(QWidget):
                 QMessageBox.warning(self, "无法进入子模块", "该实例未设置所属模块名（module 为空）。")
                 return
             self.requestEnterSubmodule.emit(inst, mod)
+            return
+
+        if kind == "clock_block":
+            self.requestOpenNode.emit(node)
             return
 
         # 其它情况：仍然走编辑（pipe_inst、或 Alt+双击 module_inst）
@@ -1519,6 +2087,32 @@ class ModuleCanvas(QWidget):
         self.scene.addItem(node)
         self._wire_resize_callback(node)
         return node
+
+    def add_clock_block_node(self, title: str, pos: QPointF) -> ClockBlockNode:
+        node = ClockBlockNode(title)
+        node.setPos(pos)
+        self.scene.addItem(node)
+        self._wire_resize_callback(node)
+        return node
+
+    def _normalize_selected_item(self, item):
+        if isinstance(item, (BaseNodeItem, EdgeItem, PortDot, PortHandle)):
+            return item
+        parent = item.parentItem() if isinstance(item, QGraphicsItem) else None
+        while parent is not None:
+            if isinstance(parent, (BaseNodeItem, EdgeItem, PortDot, PortHandle)):
+                return parent
+            parent = parent.parentItem()
+        return None
+
+    def _on_scene_selection_changed(self):
+        selected = list(self.scene.selectedItems())
+        for item in reversed(selected):
+            normalized = self._normalize_selected_item(item)
+            if normalized is not None:
+                self.requestPreviewSelection.emit(normalized)
+                return
+        self.requestPreviewSelection.emit(None)
 
 
 # ==========================================================
@@ -1619,6 +2213,133 @@ class StoragesDialog(_TableDialog):
         )
 
 
+class ConnectionsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("编辑：连接列表")
+        self.setModal(True)
+        self.resize(1180, 760)
+
+        root = QVBoxLayout(self)
+        root.addWidget(QLabel(f"说明：本模块使用 {SELF_INSTANCE} 表示“本模块边界”。"))
+
+        self.tabs = QTabWidget()
+        root.addWidget(self.tabs, 1)
+
+        self.reqsvc_page = self._make_page(
+            "请求/服务连接",
+            ["源实例名", "源端口名", "目标实例名", "目标端口名"],
+            ["src_inst", "src_port", "dst_inst", "dst_port"],
+            "规则：子实例请求 -> 子实例服务；子实例请求 -> 本模块请求；本模块服务 -> 子实例服务",
+        )
+        self.instpipe_page = self._make_page(
+            "实例/管道连接",
+            ["源实例名", "源端口名", "目标实例名", "目标端口名(管道实例可留空)"],
+            ["src_inst", "src_port", "dst_inst", "dst_port"],
+            "规则：子实例/本模块管道端口可连接到管道实例；子实例端口也可映射到本模块同向端口",
+        )
+        self.block_page = self._make_page(
+            "阻塞传递连接",
+            ["源实例名", "目标实例名"],
+            ["src_inst", "dst_inst"],
+            "规则：仅用于模块子实例 + 本模块边界",
+        )
+        self.order_page = self._make_page(
+            "更新次序连接",
+            ["源对象名", "目标对象名"],
+            ["src_inst", "dst_inst"],
+            "规则：用于模块子实例 + 时钟代码块的更新次序约束",
+        )
+
+        self.tabs.addTab(self.reqsvc_page["widget"], "请求/服务")
+        self.tabs.addTab(self.instpipe_page["widget"], "实例/管道")
+        self.tabs.addTab(self.block_page["widget"], "阻塞传递")
+        self.tabs.addTab(self.order_page["widget"], "更新次序")
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
+
+    def _make_page(self, title: str, headers: list[str], keys: list[str], hint: str) -> dict:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        label = QLabel(hint)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+
+        table = QTableWidget(0, len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+
+        bar = QHBoxLayout()
+        bar.addStretch(1)
+        btn_add = QPushButton("新增")
+        btn_del = QPushButton("删除选中")
+        bar.addWidget(btn_add)
+        bar.addWidget(btn_del)
+
+        btn_add.clicked.connect(lambda: table.insertRow(table.rowCount()))
+        btn_del.clicked.connect(lambda: table.removeRow(table.currentRow()) if table.currentRow() >= 0 else None)
+
+        layout.addLayout(bar)
+        layout.addWidget(table, 1)
+
+        return {
+            "widget": widget,
+            "title": title,
+            "keys": keys,
+            "table": table,
+        }
+
+    def _load_table(self, page: dict, rows: list[dict]):
+        table = page["table"]
+        table.setRowCount(0)
+        keys = page["keys"]
+        for row in rows or []:
+            r = table.rowCount()
+            table.insertRow(r)
+            for c, key in enumerate(keys):
+                table.setItem(r, c, QTableWidgetItem(str(row.get(key, ""))))
+
+    def _dump_table(self, page: dict) -> list[dict]:
+        out = []
+        table = page["table"]
+        keys = page["keys"]
+        for r in range(table.rowCount()):
+            row = {}
+            empty = True
+            for c, key in enumerate(keys):
+                item = table.item(r, c)
+                value = item.text().strip() if item else ""
+                if value:
+                    empty = False
+                row[key] = value
+            if not empty:
+                out.append(row)
+        return out
+
+    def load(self, data: dict):
+        self._load_table(self.reqsvc_page, _safe_list(data.get("reqsvc_conns", [])))
+        self._load_table(self.instpipe_page, _safe_list(data.get("instpipe_conns", [])))
+        self._load_table(self.block_page, _safe_list(data.get("block_conns", [])))
+        self._load_table(self.order_page, _safe_list(data.get("orders", [])))
+
+    def dump(self) -> dict:
+        return {
+            "reqsvc_conns": self._dump_table(self.reqsvc_page),
+            "instpipe_conns": self._dump_table(self.instpipe_page),
+            "block_conns": self._dump_table(self.block_page),
+            "orders": self._dump_table(self.order_page),
+        }
+
+
 class CodeBlocksDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1674,6 +2395,10 @@ class ModuleCanvasPage(QWidget):
     moduleUpdated = pyqtSignal(str, dict)
     requestRefreshExplorer = pyqtSignal()
     requestOpenModuleCanvas = pyqtSignal(str)  # module_name
+    requestOpenClockCode = pyqtSignal(str, str, dict)  # module_name, block_name, row
+    requestOpenServiceCode = pyqtSignal(str, str, dict)  # module_name, port_name, row
+    requestOpenSubreqCode = pyqtSignal(str, str, str, dict)  # module_name, inst, port, row
+    requestOpenHelperCode = pyqtSignal(str, dict)  # module_name, row
 
     def __init__(self, module_name: str, module_data: dict,
                  module_resolver: Optional[Callable[[str], Optional[dict]]] = None,
@@ -1709,53 +2434,168 @@ class ModuleCanvasPage(QWidget):
         topbar.addWidget(self.lbl_title, 1)
         side.addLayout(topbar)
 
+        self.btn_helper_code = QPushButton("帮助函数代码")
         self.btn_local_cfg = QPushButton("本地配置列表")
         self.btn_local_harness = QPushButton("本地线束列表")
         self.btn_ports = QPushButton("端口列表")
         self.btn_submodules = QPushButton("子模块列表")
         self.btn_storages = QPushButton("存储对象列表")
+        self.btn_connections = QPushButton("连接列表")
         self.btn_code_blocks = QPushButton("代码块列表")
 
-        for b in [self.btn_local_cfg, self.btn_local_harness, self.btn_ports,
-                  self.btn_submodules, self.btn_storages, self.btn_code_blocks]:
+        for b in [self.btn_helper_code, self.btn_local_cfg, self.btn_local_harness, self.btn_ports,
+                  self.btn_submodules, self.btn_storages, self.btn_connections, self.btn_code_blocks]:
             b.setMinimumHeight(34)
             side.addWidget(b)
+
+        self.cfg_section_btn, self.cfg_section_body = self._make_sidebar_section("本地配置")
+        self.local_cfg_tree = self._make_sidebar_tree()
+        cfg_body_layout = QVBoxLayout(self.cfg_section_body)
+        cfg_body_layout.setContentsMargins(0, 0, 0, 0)
+        cfg_body_layout.setSpacing(6)
+        cfg_body_layout.addWidget(self.local_cfg_tree)
+        side.addWidget(self.cfg_section_btn)
+        side.addWidget(self.cfg_section_body)
+
+        self.harness_section_btn, self.harness_section_body = self._make_sidebar_section("本地线组")
+        self.local_harness_tree = self._make_sidebar_tree()
+        harness_body_layout = QVBoxLayout(self.harness_section_body)
+        harness_body_layout.setContentsMargins(0, 0, 0, 0)
+        harness_body_layout.setSpacing(6)
+        harness_body_layout.addWidget(self.local_harness_tree)
+        side.addWidget(self.harness_section_btn)
+        side.addWidget(self.harness_section_body)
+
+        self.preview_section_btn, self.preview_section_body = self._make_sidebar_section("预览", expanded=True)
+        self.preview_title = QLabel("未选择")
+        self.preview_title.setStyleSheet("font-weight:600;")
+        self.preview_text = QTextEdit()
+        self.preview_text.setReadOnly(True)
+        self.preview_text.setMinimumHeight(120)
+        preview_layout = QVBoxLayout(self.preview_section_body)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(6)
+        preview_layout.addWidget(self.preview_title)
+        preview_layout.addWidget(self.preview_text)
+        side.addWidget(self.preview_section_btn)
+        side.addWidget(self.preview_section_body)
 
         side.addStretch(1)
         root.addWidget(self.sidebar)
 
-        # ---- Canvas
+        # ---- Canvas + top action bar
         self.canvas = ModuleCanvas()
+        self.canvas_panel = QWidget()
+        self.canvas_panel.setObjectName("moduleCanvasPanel")
+        canvas_panel_layout = QVBoxLayout(self.canvas_panel)
+        canvas_panel_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_panel_layout.setSpacing(0)
+
+        self.canvas_topbar = QWidget()
+        self.canvas_topbar.setObjectName("moduleCanvasTopbar")
+        top_actions = QHBoxLayout(self.canvas_topbar)
+        top_actions.setContentsMargins(12, 10, 12, 10)
+        top_actions.setSpacing(8)
+
+        self.btn_top_add_module = QPushButton("新增模块实例")
+        self.btn_top_add_pipe = QPushButton("新增管道实例")
+        self.btn_top_add_clock = QPushButton("新增时钟代码块")
+        self.btn_top_edit_selected = QPushButton("编辑选中")
+        self.btn_top_delete_selected = QPushButton("删除选中")
+        self.btn_top_connections = QPushButton("编辑连接")
+        self.btn_top_code_blocks = QPushButton("代码块管理")
+        self.btn_top_helper_code = QPushButton("帮助函数")
+        self.lbl_canvas_hint = QLabel("双击本模块服务端口或子模块请求端口，可直接打开对应代码页")
+        self.lbl_canvas_hint.setStyleSheet("color:#94a3b8;")
+
+        for btn in (
+            self.btn_top_add_module,
+            self.btn_top_add_pipe,
+            self.btn_top_add_clock,
+            self.btn_top_edit_selected,
+            self.btn_top_delete_selected,
+            self.btn_top_connections,
+            self.btn_top_code_blocks,
+            self.btn_top_helper_code,
+        ):
+            btn.setMinimumHeight(30)
+            top_actions.addWidget(btn, 0)
+        top_actions.addStretch(1)
+        top_actions.addWidget(self.lbl_canvas_hint, 0)
+
+        canvas_panel_layout.addWidget(self.canvas_topbar, 0)
+        canvas_panel_layout.addWidget(self.canvas, 1)
 
         if "parent_port_pos" not in self.data or not isinstance(self.data["parent_port_pos"], dict):
             self.data["parent_port_pos"] = {}
+        for key in ("reqsvc_conns", "instpipe_conns", "block_conns", "orders"):
+            if key not in self.data or not isinstance(self.data[key], list):
+                self.data[key] = []
 
         self.canvas.on_parent_port_moved = self._on_parent_port_moved
+        self.canvas.resolve_connection = self._resolve_connection_from_ports
+        self.canvas.on_edge_deleted = self._delete_connection_edge
+        self.canvas.on_port_double_clicked = self._open_code_from_port
+        self.canvas.retarget_connection = self._retarget_connection_edge
 
-        root.addWidget(self.canvas, 1)
+        root.addWidget(self.canvas_panel, 1)
+
+        self._current_canvas_selection = None
+        self._delete_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self)
+        self._backspace_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Backspace), self)
+        self._edit_shortcut = QShortcut(QKeySequence("Ctrl+E"), self)
 
         self._refresh_parent_ports()
 
         self.btn_collapse.clicked.connect(self._toggle_sidebar)
+        self.btn_helper_code.clicked.connect(self._open_helper_code)
         self.btn_local_cfg.clicked.connect(self._edit_local_cfg)
         self.btn_local_harness.clicked.connect(self._edit_local_harness)
         self.btn_ports.clicked.connect(self._edit_pipe_ports)
         self.btn_submodules.clicked.connect(self._edit_submodules_list)
         self.btn_storages.clicked.connect(self._edit_storages)
+        self.btn_connections.clicked.connect(self._edit_connections)
         self.btn_code_blocks.clicked.connect(self._edit_code_blocks)
+        self.btn_top_add_module.clicked.connect(self._create_module_inst_from_toolbar)
+        self.btn_top_add_pipe.clicked.connect(self._create_pipe_inst_from_toolbar)
+        self.btn_top_add_clock.clicked.connect(self._create_clock_block_from_toolbar)
+        self.btn_top_edit_selected.clicked.connect(self._edit_selected_canvas_item)
+        self.btn_top_delete_selected.clicked.connect(self._delete_selected_canvas_item)
+        self.btn_top_connections.clicked.connect(self._edit_connections)
+        self.btn_top_code_blocks.clicked.connect(self._edit_code_blocks)
+        self.btn_top_helper_code.clicked.connect(self._open_helper_code)
+        self.local_cfg_tree.itemClicked.connect(self._on_sidebar_item_clicked)
+        self.local_harness_tree.itemClicked.connect(self._on_sidebar_item_clicked)
+        self.local_cfg_tree.itemDoubleClicked.connect(lambda _item, _col: self._edit_local_cfg())
+        self.local_harness_tree.itemDoubleClicked.connect(lambda _item, _col: self._edit_local_harness())
+        self.local_cfg_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.local_harness_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.local_cfg_tree.customContextMenuRequested.connect(lambda pos: self._show_sidebar_item_menu(self.local_cfg_tree, pos, "cfg"))
+        self.local_harness_tree.customContextMenuRequested.connect(lambda pos: self._show_sidebar_item_menu(self.local_harness_tree, pos, "harness"))
 
         self.canvas.requestCreateModuleInst.connect(self._create_module_inst_at)
         self.canvas.requestCreatePipeInst.connect(self._create_pipe_inst_at)
+        self.canvas.requestCreateClockBlock.connect(self._create_clock_block_at)
         self.canvas.requestEditNode.connect(self._edit_node)
         self.canvas.requestEnterSubmodule.connect(self._enter_submodule)
         self.canvas.requestOpenNode.connect(self._open_node)
         self.canvas.requestDeleteNode.connect(self._delete_node)
         self.canvas.requestNodeResized.connect(self._on_node_resized)  # 强烈建议：尺寸持久化
+        self.canvas.requestPreviewSelection.connect(self._on_canvas_item_selected)
+        self.canvas.requestEditBoundaryPort.connect(self._edit_boundary_port)
+        self.canvas.requestDeleteBoundaryPort.connect(self._delete_boundary_port)
+        self._delete_shortcut.activated.connect(self._delete_selected_canvas_item)
+        self._backspace_shortcut.activated.connect(self._delete_selected_canvas_item)
+        self._edit_shortcut.activated.connect(self._edit_selected_canvas_item)
 
         # module_inst 索引（用于 refresh_canvas）
         self._inst_nodes: dict[str, BaseNodeItem] = {}
+        self._pipe_nodes: dict[str, BaseNodeItem] = {}
+        self._clock_nodes: dict[str, BaseNodeItem] = {}
 
+        self._refresh_sidebar_local_views()
         self._render_all_instances()
+        self._update_canvas_selection_actions()
 
     # --------------------------
     # Resize persistence (强烈建议)
@@ -1792,24 +2632,47 @@ class ModuleCanvasPage(QWidget):
             self._notify_updated()
             return
 
+        if kind == "clock_block":
+            name = _strip(payload.get("name", ""))
+            if not name:
+                return
+            clocks = _safe_list(self.data.get("clock_blocks", []))
+            for block in clocks:
+                if _strip(block.get("name")) == name:
+                    block["w"] = int(node.w)
+                    block["h"] = int(node.h)
+                    break
+            self.data["clock_blocks"] = clocks
+            self._notify_updated()
+            return
+
     # --------------------------
     # Open / Delete
     # --------------------------
     def _open_node(self, node: BaseNodeItem):
         payload = node.payload or {}
-        if payload.get("_kind") != "module_inst":
-            return
-        mod = _strip(payload.get("module", ""))
-        if not mod:
-            QMessageBox.warning(self, "无法打开", "该模块实例未设置所属模块名（module 为空）。")
+        kind = payload.get("_kind")
+        if kind == "module_inst":
+            mod = _strip(payload.get("module", ""))
+            if not mod:
+                QMessageBox.warning(self, "无法打开", "该模块实例未设置所属模块名（module 为空）。")
+                return
+
+            defn = self.module_resolver(mod)
+            if defn is None:
+                QMessageBox.warning(self, "模块不存在", f"未找到模块定义“{mod}”，无法打开其画布。")
+                return
+
+            self.requestOpenModuleCanvas.emit(mod)
             return
 
-        defn = self.module_resolver(mod)
-        if defn is None:
-            QMessageBox.warning(self, "模块不存在", f"未找到模块定义“{mod}”，无法打开其画布。")
+        if kind == "clock_block":
+            block_name = _strip(payload.get("name", ""))
+            if not block_name:
+                QMessageBox.warning(self, "无法打开", "该时钟代码块缺少名称。")
+                return
+            self.requestOpenClockCode.emit(self.module_name, block_name, dict(payload))
             return
-
-        self.requestOpenModuleCanvas.emit(mod)
 
     def _delete_node(self, node: BaseNodeItem):
         payload = node.payload or {}
@@ -1829,13 +2692,16 @@ class ModuleCanvasPage(QWidget):
 
             subs = _safe_list(self.data.get("submodules", []))
             self.data["submodules"] = [x for x in subs if _strip(x.get("inst")) != inst]
+            self._remove_connections_for_instance(inst)
+            self._remove_subreq_code_rows_for_instance(inst)
 
             try:
+                node.clear_anchor_edges()
                 node.clear_ports()
             except Exception:
                 pass
             sc = self.canvas.scene
-            if sc:
+            if sc and node.scene() is sc:
                 sc.removeItem(node)
 
             if inst in self._inst_nodes:
@@ -1858,15 +2724,53 @@ class ModuleCanvasPage(QWidget):
 
             pipes = _safe_list(self.data.get("pipes", []))
             self.data["pipes"] = [x for x in pipes if _strip(x.get("inst")) != inst]
+            self._remove_connections_for_instance(inst)
 
             try:
+                node.clear_anchor_edges()
                 node.clear_ports()
             except Exception:
                 pass
             sc = self.canvas.scene
-            if sc:
+            if sc and node.scene() is sc:
                 sc.removeItem(node)
 
+            if inst in self._pipe_nodes:
+                self._pipe_nodes.pop(inst, None)
+
+            self._notify_updated()
+            return
+
+        if kind == "clock_block":
+            name = _strip(payload.get("name", ""))
+            if not name:
+                return
+            ok = QMessageBox.question(
+                self, "确认删除",
+                f"确定删除时钟代码块“{name}”吗？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if ok != QMessageBox.StandardButton.Yes:
+                return
+
+            clocks = _safe_list(self.data.get("clock_blocks", []))
+            self.data["clock_blocks"] = [x for x in clocks if _strip(x.get("name")) != name]
+            self.data["orders"] = [
+                row for row in _safe_list(self.data.get("orders", []))
+                if _strip(row.get("dst_inst", "")) != name
+            ]
+
+            try:
+                node.clear_anchor_edges()
+                node.clear_ports()
+            except Exception:
+                pass
+            sc = self.canvas.scene
+            if sc and node.scene() is sc:
+                sc.removeItem(node)
+
+            self._clock_nodes.pop(name, None)
+            self._render_connections()
             self._notify_updated()
             return
 
@@ -1881,29 +2785,425 @@ class ModuleCanvasPage(QWidget):
     # --------------------------
     # Sidebar
     # --------------------------
+    def _make_sidebar_section(self, title: str, expanded: bool = False) -> tuple[QToolButton, QWidget]:
+        btn = QToolButton()
+        btn.setText(title)
+        btn.setCheckable(True)
+        btn.setChecked(expanded)
+        btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        btn.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+        btn.setMinimumHeight(28)
+
+        body = QWidget()
+        body.setVisible(expanded)
+
+        btn.clicked.connect(lambda checked, b=btn, w=body: self._set_sidebar_section_expanded(b, w, checked))
+        return btn, body
+
+    def _set_sidebar_section_expanded(self, button: QToolButton, body: QWidget, expanded: bool):
+        button.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+        body.setVisible(expanded)
+
+    def _make_sidebar_tree(self) -> QTreeWidget:
+        tree = QTreeWidget()
+        tree.setHeaderHidden(True)
+        tree.setRootIsDecorated(False)
+        tree.setIndentation(10)
+        tree.setMinimumHeight(90)
+        tree.setMaximumHeight(140)
+        return tree
+
+    def _set_sidebar_preview(self, title: str, lines: list[str]):
+        self.preview_title.setText(title or "未选择")
+        self.preview_text.setPlainText("\n".join(lines).strip())
+
+    def _selection_action_state(self, item) -> tuple[bool, bool, str]:
+        if isinstance(item, BaseNodeItem):
+            payload = item.payload or {}
+            kind = payload.get("_kind", "")
+            label = {
+                "module_inst": "模块实例",
+                "pipe_inst": "管道实例",
+                "clock_block": "时钟代码块",
+            }.get(kind, "节点")
+            return True, True, label
+
+        if isinstance(item, EdgeItem):
+            return True, True, "连接"
+
+        if isinstance(item, PortHandle):
+            item = item.dot
+
+        if isinstance(item, PortDot):
+            if item.owner_kind == "boundary":
+                return True, True, "边界端口"
+            return False, False, "端口"
+
+        return False, False, ""
+
+    def _update_canvas_selection_actions(self):
+        can_edit, can_delete, label = self._selection_action_state(self._current_canvas_selection)
+        self.btn_top_edit_selected.setEnabled(can_edit)
+        self.btn_top_delete_selected.setEnabled(can_delete)
+        if label:
+            self.btn_top_edit_selected.setToolTip(f"编辑当前选中的{label}（Ctrl+E）")
+            self.btn_top_delete_selected.setToolTip(f"删除当前选中的{label}（Delete / Backspace）")
+        else:
+            self.btn_top_edit_selected.setToolTip("先在画布中选中一个可编辑对象")
+            self.btn_top_delete_selected.setToolTip("先在画布中选中一个可删除对象")
+
+    def _port_definition_for(self, port: PortDot) -> dict:
+        if port.owner_kind == "boundary":
+            if port.port_kind == "pipe":
+                for row in _safe_list(self.data.get("pipe_ports", [])):
+                    if _strip(row.get("name", "")) == _strip(port.port_name) and _strip(row.get("dir", "")) == _strip(port.direction):
+                        return dict(row)
+            else:
+                target_kind = "req" if port.direction == "req" else "service"
+                for row in _safe_list(self.data.get("rpcs", [])):
+                    if _strip(row.get("name", "")) == _strip(port.port_name) and _strip(row.get("kind", "")) == target_kind:
+                        return dict(row)
+            return {}
+
+        if port.owner_kind == "module_inst":
+            inst_name = _strip(port.owner_name)
+            sub = next((row for row in _safe_list(self.data.get("submodules", [])) if _strip(row.get("inst", "")) == inst_name), None)
+            mod_name = _strip(sub.get("module", "")) if isinstance(sub, dict) else ""
+            defn = self.module_resolver(mod_name) if mod_name else None
+            if isinstance(defn, dict):
+                if port.port_kind == "pipe":
+                    for row in _safe_list(defn.get("pipe_ports", [])):
+                        if _strip(row.get("name", "")) == _strip(port.port_name) and _strip(row.get("dir", "")) == _strip(port.direction):
+                            return dict(row)
+                else:
+                    target_kind = "req" if port.direction == "req" else "service"
+                    for row in _safe_list(defn.get("rpcs", [])):
+                        if _strip(row.get("name", "")) == _strip(port.port_name) and _strip(row.get("kind", "")) == target_kind:
+                            return dict(row)
+            return {}
+
+        if port.owner_kind == "pipe_inst":
+            inst_name = _strip(port.owner_name)
+            pipe_row = next((row for row in _safe_list(self.data.get("pipes", [])) if _strip(row.get("inst", "")) == inst_name), None)
+            if isinstance(pipe_row, dict):
+                return {
+                    "name": port.port_name,
+                    "dir": port.direction,
+                    "comment": pipe_row.get("comment", ""),
+                    "dtype": pipe_row.get("dtype", ""),
+                }
+        return {}
+
+    def _module_summary_preview(self):
+        self._set_sidebar_preview(
+            f"模块：{self.module_name}",
+            [
+                f"子模块实例：{len(_safe_list(self.data.get('submodules', [])))}",
+                f"管道实例：{len(_safe_list(self.data.get('pipes', [])))}",
+                f"时钟代码块：{len(_safe_list(self.data.get('clock_blocks', [])))}",
+                f"连接数：{len(_safe_list(self.data.get('reqsvc_conns', []))) + len(_safe_list(self.data.get('instpipe_conns', []))) + len(_safe_list(self.data.get('block_conns', []))) + len(_safe_list(self.data.get('orders', [])))}",
+            ],
+        )
+
+    def _preview_for_node(self, node: BaseNodeItem):
+        payload = node.payload or {}
+        kind = payload.get("_kind", "")
+        if kind == "module_inst":
+            inst_name = _strip(payload.get("inst", ""))
+            module_name = _strip(payload.get("module", ""))
+            defn = self.module_resolver(module_name) if module_name else None
+            self._set_sidebar_preview(
+                f"模块实例：{inst_name or '（未命名）'}",
+                [
+                    f"所属模块：{module_name or '（未填写）'}",
+                    f"注释：{payload.get('comment', '') or '（无注释）'}",
+                    "",
+                    f"对外 RPC 端口：{len(_safe_list(defn.get('rpcs', [])) if isinstance(defn, dict) else [])}",
+                    f"对外 Pipe 端口：{len(_safe_list(defn.get('pipe_ports', [])) if isinstance(defn, dict) else [])}",
+                ],
+            )
+            return
+
+        if kind == "pipe_inst":
+            self._set_sidebar_preview(
+                f"管道实例：{_strip(payload.get('inst', '')) or '（未命名）'}",
+                [
+                    f"数据类型：{payload.get('dtype', '') or '（未填写）'}",
+                    f"注释：{payload.get('comment', '') or '（无注释）'}",
+                    "",
+                    f"输入尺寸：{payload.get('in_size', '') or '（未填写）'}",
+                    f"输出尺寸：{payload.get('out_size', '') or '（未填写）'}",
+                    f"缓冲区大小：{payload.get('buf', '') or '（未填写）'}",
+                    f"延迟：{payload.get('latency', '') or '（未填写）'}",
+                    f"握手：{payload.get('handshake', '') or '（未填写）'}",
+                    f"有效标志：{payload.get('valid', '') or '（未填写）'}",
+                ],
+            )
+            return
+
+        if kind == "clock_block":
+            self._set_sidebar_preview(
+                f"时钟代码块：{_strip(payload.get('name', '')) or '（未命名）'}",
+                [
+                    f"注释：{payload.get('comment', '') or '（无注释）'}",
+                    "",
+                    "双击可打开对应代码页。",
+                ],
+            )
+            return
+
+        self._module_summary_preview()
+
+    def _preview_for_port(self, port):
+        if isinstance(port, PortHandle):
+            port = port.dot
+        if not isinstance(port, PortDot):
+            self._module_summary_preview()
+            return
+
+        definition = self._port_definition_for(port)
+        owner_text = "本模块边界" if port.owner_kind == "boundary" else _strip(port.owner_name) or "（未命名）"
+        title = f"端口：{owner_text}.{_strip(port.port_name)}"
+        lines = [
+            f"类别：{'请求/服务' if port.port_kind == 'rpc' else '管道'}",
+            f"方向：{port.direction}",
+            f"所属对象：{owner_text}",
+        ]
+        if definition:
+            if _strip(definition.get("dtype", "")):
+                lines.append(f"数据类型：{definition.get('dtype', '')}")
+            if _strip(definition.get("params", "")):
+                lines.append(f"参数：{definition.get('params', '')}")
+            if _strip(definition.get("returns", "")):
+                lines.append(f"返回：{definition.get('returns', '')}")
+            lines.append(f"注释：{definition.get('comment', '') or '（无注释）'}")
+        else:
+            lines.append("注释：（无详细信息）")
+        if port.owner_kind == "boundary":
+            lines.append("")
+            lines.append("右键可直接编辑或删除该边界端口。")
+        if port.owner_kind == "pipe_inst":
+            lines.append("")
+            lines.append("说明：该端口来自管道实例的固定 IN/OUT 端口。")
+        self._set_sidebar_preview(title, lines)
+
+    def _preview_for_edge(self, edge: EdgeItem):
+        group = _strip(edge.conn_group)
+        title_map = {
+            "reqsvc_conns": "连接预览：请求/服务",
+            "instpipe_conns": "连接预览：实例/管道",
+            "block_conns": "连接预览：阻塞传递",
+            "orders": "连接预览：更新次序",
+        }
+        lines = [edge.toolTip() or "（无描述）", ""]
+        if edge.conn_key:
+            lines.append(f"连接键：{edge.conn_key}")
+        lines.append("右键或双击可编辑该连接。")
+        lines.append("选中后可拖拽端点修改连接位置。")
+        self._set_sidebar_preview(title_map.get(group, "连接预览"), lines)
+
+    def _on_canvas_item_selected(self, item):
+        self._current_canvas_selection = item
+        self._update_canvas_selection_actions()
+        if item is None:
+            self._module_summary_preview()
+            return
+        if isinstance(item, EdgeItem):
+            self._preview_for_edge(item)
+            return
+        if isinstance(item, (PortDot, PortHandle)):
+            self._preview_for_port(item)
+            return
+        if isinstance(item, BaseNodeItem):
+            self._preview_for_node(item)
+            return
+        self._module_summary_preview()
+
+    def _edit_selected_canvas_item(self):
+        item = self._current_canvas_selection
+        if isinstance(item, PortHandle):
+            item = item.dot
+
+        if isinstance(item, BaseNodeItem):
+            self._edit_node(item)
+            return
+        if isinstance(item, EdgeItem):
+            self._edit_connection_edge(item)
+            return
+        if isinstance(item, PortDot) and item.owner_kind == "boundary":
+            self._edit_boundary_port(item)
+            return
+
+    def _delete_selected_canvas_item(self):
+        item = self._current_canvas_selection
+        if isinstance(item, PortHandle):
+            item = item.dot
+
+        if isinstance(item, BaseNodeItem):
+            self._delete_node(item)
+            return
+        if isinstance(item, EdgeItem):
+            self._delete_connection_edge(item)
+            return
+        if isinstance(item, PortDot) and item.owner_kind == "boundary":
+            self._delete_boundary_port(item)
+            return
+
+    def _populate_local_cfg_tree(self):
+        self.local_cfg_tree.clear()
+        rows = _safe_list(self.data.get("local_cfgs", []))
+        if not rows:
+            item = QTreeWidgetItem(["（无本地配置）"])
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.local_cfg_tree.addTopLevelItem(item)
+            return
+
+        for row in rows:
+            name = _strip(row.get("name", "")) or "（未命名）"
+            default = _strip(row.get("default", ""))
+            comment = _strip(row.get("comment", ""))
+            label = name if not default else f"{name} = {default}"
+            item = QTreeWidgetItem([label])
+            payload = {
+                "kind": "local_cfg",
+                "name": name,
+                "default": default,
+                "comment": comment,
+            }
+            item.setData(0, Qt.ItemDataRole.UserRole, payload)
+            item.setToolTip(0, comment or default or "（无详细信息）")
+            self.local_cfg_tree.addTopLevelItem(item)
+
+    def _populate_local_harness_tree(self):
+        self.local_harness_tree.clear()
+        rows = _safe_list(self.data.get("local_harnesses", []))
+        if not rows:
+            item = QTreeWidgetItem(["（无本地线组）"])
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.local_harness_tree.addTopLevelItem(item)
+            return
+
+        for row in rows:
+            name = _strip(row.get("name", "")) or "（未命名）"
+            mode = _strip(row.get("mode", "")) or "members"
+            comment = _strip(row.get("comment", ""))
+            body = _strip(row.get("body", ""))
+            label = f"{name} [{mode}]"
+            item = QTreeWidgetItem([label])
+            payload = {
+                "kind": "local_harness",
+                "name": name,
+                "mode": mode,
+                "comment": comment,
+                "body": body,
+            }
+            item.setData(0, Qt.ItemDataRole.UserRole, payload)
+            item.setToolTip(0, comment or _first_line(body) or "（无详细信息）")
+            self.local_harness_tree.addTopLevelItem(item)
+
+    def _refresh_sidebar_local_views(self):
+        self._populate_local_cfg_tree()
+        self._populate_local_harness_tree()
+
+        if self.local_cfg_tree.topLevelItemCount() > 0:
+            item = self.local_cfg_tree.topLevelItem(0)
+            if item and item.flags() & Qt.ItemFlag.ItemIsSelectable:
+                self.local_cfg_tree.setCurrentItem(item)
+                self._on_sidebar_item_clicked(item, 0)
+                return
+
+        if self.local_harness_tree.topLevelItemCount() > 0:
+            item = self.local_harness_tree.topLevelItem(0)
+            if item and item.flags() & Qt.ItemFlag.ItemIsSelectable:
+                self.local_harness_tree.setCurrentItem(item)
+                self._on_sidebar_item_clicked(item, 0)
+                return
+
+        self._set_sidebar_preview("未选择", ["请选择本地配置或本地线组以查看详细信息。"])
+
+    def _on_sidebar_item_clicked(self, item: QTreeWidgetItem, column: int):
+        payload = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(payload, dict):
+            self._set_sidebar_preview("未选择", ["请选择本地配置或本地线组以查看详细信息。"])
+            return
+
+        kind = payload.get("kind", "")
+        if kind == "local_cfg":
+            self._set_sidebar_preview(
+                f"本地配置：{payload.get('name', '')}",
+                [
+                    f"默认值：{payload.get('default', '') or '（空）'}",
+                    "",
+                    f"注释：{payload.get('comment', '') or '（无注释）'}",
+                ],
+            )
+            return
+
+        if kind == "local_harness":
+            self._set_sidebar_preview(
+                f"本地线组：{payload.get('name', '')}",
+                [
+                    f"定义模式：{payload.get('mode', '') or 'members'}",
+                    "",
+                    f"注释：{payload.get('comment', '') or '（无注释）'}",
+                    "",
+                    f"定义预览：{_first_line(payload.get('body', '')) or '（空）'}",
+                ],
+            )
+            return
+
+        self._set_sidebar_preview("未选择", ["请选择本地配置或本地线组以查看详细信息。"])
+
+    def _show_sidebar_item_menu(self, tree: QTreeWidget, pos, kind: str):
+        item = tree.itemAt(pos)
+        if item is None:
+            return
+        payload = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(payload, dict):
+            return
+
+        menu = QMenu(self)
+        act_edit = menu.addAction("编辑")
+        act = menu.exec(tree.viewport().mapToGlobal(pos))
+        if act == act_edit:
+            if kind == "cfg":
+                self._edit_local_cfg()
+            elif kind == "harness":
+                self._edit_local_harness()
+
     def _toggle_sidebar(self):
         if self.sidebar.width() > 60:
             self.sidebar.setFixedWidth(52)
             self.btn_collapse.setText("⟩")
             self.btn_collapse.setToolTip("展开侧边栏")
             self.lbl_title.setVisible(False)
+            self.btn_helper_code.setText("辅")
             self.btn_local_cfg.setText("配")
             self.btn_local_harness.setText("束")
             self.btn_ports.setText("端")
             self.btn_submodules.setText("子")
             self.btn_storages.setText("存")
+            self.btn_connections.setText("连")
             self.btn_code_blocks.setText("码")
+            self.cfg_section_btn.setText("地配")
+            self.harness_section_btn.setText("地束")
+            self.preview_section_btn.setText("预")
         else:
             self.sidebar.setFixedWidth(220)
             self.btn_collapse.setText("⟨")
             self.btn_collapse.setToolTip("收起侧边栏")
             self.lbl_title.setVisible(True)
+            self.btn_helper_code.setText("帮助函数代码")
             self.btn_local_cfg.setText("本地配置列表")
             self.btn_local_harness.setText("本地线束列表")
             self.btn_ports.setText("端口列表")
             self.btn_submodules.setText("子模块列表")
             self.btn_storages.setText("存储对象列表")
+            self.btn_connections.setText("连接列表")
             self.btn_code_blocks.setText("代码块列表")
+            self.cfg_section_btn.setText("本地配置")
+            self.harness_section_btn.setText("本地线组")
+            self.preview_section_btn.setText("预览")
 
     # --------------------------
     # Update emit
@@ -1919,6 +3219,1020 @@ class ModuleCanvasPage(QWidget):
 
         QTimer.singleShot(0, _emit)
 
+    def _emit_updated_now(self):
+        self._pending_emit = False
+        self.moduleUpdated.emit(self.module_name, self.data)
+
+    def _helper_code_row(self) -> dict:
+        helper = self.data.get("helper_code", [])
+        if isinstance(helper, list):
+            code = "\n".join(str(line) for line in helper)
+        else:
+            code = str(helper or "")
+        return {
+            "name": "helper_code",
+            "code": code,
+        }
+
+    def _open_helper_code(self):
+        self.requestOpenHelperCode.emit(self.module_name, self._helper_code_row())
+
+    def _visible_scene_center(self) -> QPointF:
+        rect = self.canvas.view.viewport().rect()
+        return self.canvas.view.mapToScene(rect.center())
+
+    def _create_module_inst_from_toolbar(self):
+        self._create_module_inst_at(self._visible_scene_center())
+
+    def _create_pipe_inst_from_toolbar(self):
+        self._create_pipe_inst_at(self._visible_scene_center())
+
+    def _create_clock_block_from_toolbar(self):
+        self._create_clock_block_at(self._visible_scene_center())
+
+    def _service_code_row(self, port_name: str) -> Optional[dict]:
+        target = _strip(port_name)
+        for row in _safe_list(self.data.get("service_blocks", [])):
+            if _strip(row.get("port", "")) == target:
+                return row
+        return None
+
+    def _subreq_code_row(self, inst_name: str, port_name: str) -> Optional[dict]:
+        inst = _strip(inst_name)
+        port = _strip(port_name)
+        for row in _safe_list(self.data.get("subreq_blocks", [])):
+            if _strip(row.get("inst", "")) == inst and _strip(row.get("port", "")) == port:
+                return row
+        return None
+
+    def _prune_service_code_rows(self):
+        allowed = {
+            _strip(row.get("name", ""))
+            for row in _safe_list(self.data.get("rpcs", []))
+            if _strip(row.get("kind", "")) == "service" and _strip(row.get("name", ""))
+        }
+        rows = [
+            row for row in _safe_list(self.data.get("service_blocks", []))
+            if _strip(row.get("port", "")) in allowed
+        ]
+        self.data["service_blocks"] = rows
+
+    def _prune_subreq_code_rows_for_instance(self, inst_name: str, module_name: str):
+        inst = _strip(inst_name)
+        if not inst:
+            return
+
+        defn = self.module_resolver(module_name) if module_name else None
+        rpc_rows = _safe_list(defn.get("rpcs", [])) if isinstance(defn, dict) else []
+        allowed_ports = {
+            _strip(row.get("name", ""))
+            for row in rpc_rows
+            if _strip(row.get("kind", "")) == "req" and _strip(row.get("name", ""))
+        }
+        rows = []
+        for row in _safe_list(self.data.get("subreq_blocks", [])):
+            if _strip(row.get("inst", "")) != inst:
+                rows.append(row)
+                continue
+            if _strip(row.get("port", "")) in allowed_ports:
+                rows.append(row)
+        self.data["subreq_blocks"] = rows
+
+    def _remove_subreq_code_rows_for_instance(self, inst_name: str):
+        inst = _strip(inst_name)
+        self.data["subreq_blocks"] = [
+            row for row in _safe_list(self.data.get("subreq_blocks", []))
+            if _strip(row.get("inst", "")) != inst
+        ]
+
+    def _replace_subreq_inst_name(self, old_name: str, new_name: str):
+        old_inst = _strip(old_name)
+        new_inst = _strip(new_name)
+        rows = []
+        for row in _safe_list(self.data.get("subreq_blocks", [])):
+            item = dict(row)
+            if _strip(item.get("inst", "")) == old_inst:
+                item["inst"] = new_inst
+            rows.append(item)
+        self.data["subreq_blocks"] = rows
+
+    def _ensure_service_code_row(self, port_name: str) -> tuple[dict, bool]:
+        row = self._service_code_row(port_name)
+        if isinstance(row, dict):
+            return row, False
+        rows = _safe_list(self.data.get("service_blocks", []))
+        row = {"port": _strip(port_name), "code": ""}
+        rows.append(row)
+        self.data["service_blocks"] = rows
+        return row, True
+
+    def _ensure_subreq_code_row(self, inst_name: str, port_name: str) -> tuple[dict, bool]:
+        row = self._subreq_code_row(inst_name, port_name)
+        if isinstance(row, dict):
+            return row, False
+        rows = _safe_list(self.data.get("subreq_blocks", []))
+        row = {"inst": _strip(inst_name), "port": _strip(port_name), "code": ""}
+        rows.append(row)
+        self.data["subreq_blocks"] = rows
+        return row, True
+
+    def _open_code_from_port(self, port: PortDot) -> bool:
+        if port.port_kind != "rpc":
+            return False
+
+        if port.owner_kind == "boundary" and port.direction == "serv":
+            row, created = self._ensure_service_code_row(port.port_name)
+            if created:
+                self._emit_updated_now()
+            self.requestOpenServiceCode.emit(self.module_name, port.port_name, dict(row))
+            return True
+
+        if port.owner_kind == "module_inst" and port.direction == "req":
+            row, created = self._ensure_subreq_code_row(port.owner_name, port.port_name)
+            if created:
+                self._emit_updated_now()
+            self.requestOpenSubreqCode.emit(self.module_name, port.owner_name, port.port_name, dict(row))
+            return True
+
+        return False
+
+    def _boundary_port_record(self, port: PortDot) -> tuple[str, int, dict] | None:
+        if not isinstance(port, PortDot) or port.owner_kind != "boundary":
+            return None
+
+        if port.port_kind == "pipe":
+            rows = _safe_list(self.data.get("pipe_ports", []))
+            for idx, row in enumerate(rows):
+                if _strip(row.get("name", "")) == _strip(port.port_name) and _strip(row.get("dir", "")) == _strip(port.direction):
+                    return "pipe", idx, dict(row)
+            return None
+
+        target_kind = "req" if port.direction == "req" else "service"
+        rows = _safe_list(self.data.get("rpcs", []))
+        for idx, row in enumerate(rows):
+            if _strip(row.get("name", "")) == _strip(port.port_name) and _strip(row.get("kind", "")) == target_kind:
+                return "rpc", idx, dict(row)
+        return None
+
+    def _boundary_port_duplicate_exists(self, port_kind: str, direction: str, name: str, exclude_index: int) -> bool:
+        name = _strip(name)
+        direction = _strip(direction)
+        if _strip(port_kind) == "pipe":
+            for idx, row in enumerate(_safe_list(self.data.get("pipe_ports", []))):
+                if idx == exclude_index:
+                    continue
+                if _strip(row.get("name", "")) == name and _strip(row.get("dir", "")) == direction:
+                    return True
+            return False
+
+        target_kind = "req" if direction == "req" else "service"
+        for idx, row in enumerate(_safe_list(self.data.get("rpcs", []))):
+            if idx == exclude_index:
+                continue
+            if _strip(row.get("name", "")) == name and _strip(row.get("kind", "")) == target_kind:
+                return True
+        return False
+
+    def _rename_service_code_port(self, old_name: str, new_name: str):
+        old_port = _strip(old_name)
+        new_port = _strip(new_name)
+        rows = []
+        for row in _safe_list(self.data.get("service_blocks", [])):
+            item = dict(row)
+            if _strip(item.get("port", "")) == old_port:
+                item["port"] = new_port
+            rows.append(item)
+        self.data["service_blocks"] = rows
+
+    def _retarget_boundary_pipe_connections(self, old_name: str, old_dir: str, new_name: str, new_dir: str):
+        rows = []
+        old_port = _strip(old_name)
+        same_dir = _strip(old_dir) == _strip(new_dir)
+        for row in _safe_list(self.data.get("instpipe_conns", [])):
+            item = dict(row)
+            if _normalize_instance_name(item.get("dst_inst", "")) == SELF_INSTANCE and _strip(item.get("dst_port", "")) == old_port:
+                if not same_dir:
+                    continue
+                item["dst_port"] = _strip(new_name)
+            rows.append(item)
+        self.data["instpipe_conns"] = rows
+
+    def _remove_boundary_pipe_connections(self, port_name: str):
+        target = _strip(port_name)
+        self.data["instpipe_conns"] = [
+            row for row in _safe_list(self.data.get("instpipe_conns", []))
+            if not (
+                _normalize_instance_name(row.get("dst_inst", "")) == SELF_INSTANCE
+                and _strip(row.get("dst_port", "")) == target
+            )
+        ]
+
+    def _retarget_boundary_rpc_connections(self, old_name: str, old_dir: str, new_name: str, new_dir: str):
+        rows = []
+        old_port = _strip(old_name)
+        old_dir = _strip(old_dir)
+        new_dir = _strip(new_dir)
+        for row in _safe_list(self.data.get("reqsvc_conns", [])):
+            item = dict(row)
+            if (
+                old_dir == "req"
+                and _normalize_instance_name(item.get("dst_inst", "")) == SELF_INSTANCE
+                and _strip(item.get("dst_port", "")) == old_port
+            ):
+                if new_dir != "req":
+                    continue
+                item["dst_port"] = _strip(new_name)
+            elif (
+                old_dir == "serv"
+                and _normalize_instance_name(item.get("src_inst", "")) == SELF_INSTANCE
+                and _strip(item.get("src_port", "")) == old_port
+            ):
+                if new_dir != "serv":
+                    continue
+                item["src_port"] = _strip(new_name)
+            rows.append(item)
+        self.data["reqsvc_conns"] = rows
+
+    def _remove_boundary_rpc_connections(self, port_name: str, direction: str):
+        target = _strip(port_name)
+        direction = _strip(direction)
+        rows = []
+        for row in _safe_list(self.data.get("reqsvc_conns", [])):
+            if (
+                direction == "req"
+                and _normalize_instance_name(row.get("dst_inst", "")) == SELF_INSTANCE
+                and _strip(row.get("dst_port", "")) == target
+            ):
+                continue
+            if (
+                direction == "serv"
+                and _normalize_instance_name(row.get("src_inst", "")) == SELF_INSTANCE
+                and _strip(row.get("src_port", "")) == target
+            ):
+                continue
+            rows.append(row)
+        self.data["reqsvc_conns"] = rows
+
+    def _after_boundary_ports_changed(self):
+        self._refresh_parent_ports()
+        self._render_connections()
+        self._module_summary_preview()
+        self._notify_updated()
+
+    def _edit_boundary_port(self, port: PortDot):
+        record = self._boundary_port_record(port)
+        if record is None:
+            QMessageBox.warning(self, "无法编辑", "未找到该边界端口对应的数据定义。")
+            return
+
+        port_kind, row_idx, row = record
+        dlg = PortEditDialog(
+            "编辑边界端口",
+            port_kind=port_kind,
+            data={
+                "dir": port.direction,
+                "name": row.get("name", ""),
+                "comment": row.get("comment", ""),
+                "dtype": row.get("dtype", ""),
+            },
+            parent=self,
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        updated = dlg.get_data()
+        new_name = _strip(updated.get("name", ""))
+        new_dir = _strip(updated.get("dir", ""))
+        old_name = _strip(row.get("name", ""))
+        old_dir = _strip(port.direction)
+        if not new_name or not new_dir:
+            QMessageBox.warning(self, "输入无效", "端口方向和端口名不能为空。")
+            return
+
+        if self._boundary_port_duplicate_exists(port_kind, new_dir, new_name, row_idx):
+            QMessageBox.warning(self, "重复端口", "已存在同方向、同名称的边界端口。")
+            return
+
+        if port_kind == "pipe":
+            rows = _safe_list(self.data.get("pipe_ports", []))
+            rows[row_idx] = {
+                "dir": new_dir,
+                "name": new_name,
+                "comment": updated.get("comment", ""),
+                "dtype": updated.get("dtype", ""),
+            }
+            self.data["pipe_ports"] = rows
+            self._retarget_boundary_pipe_connections(old_name, old_dir, new_name, new_dir)
+        else:
+            rows = _safe_list(self.data.get("rpcs", []))
+            item = dict(row)
+            item["kind"] = "req" if new_dir == "req" else "service"
+            item["name"] = new_name
+            item["comment"] = updated.get("comment", "")
+            rows[row_idx] = item
+            self.data["rpcs"] = rows
+            self._retarget_boundary_rpc_connections(old_name, old_dir, new_name, new_dir)
+            if old_dir == "serv" and new_dir == "serv" and old_name != new_name:
+                self._rename_service_code_port(old_name, new_name)
+            else:
+                self._prune_service_code_rows()
+
+        self._after_boundary_ports_changed()
+
+    def _delete_boundary_port(self, port: PortDot):
+        record = self._boundary_port_record(port)
+        if record is None:
+            QMessageBox.warning(self, "无法删除", "未找到该边界端口对应的数据定义。")
+            return
+
+        port_kind, row_idx, row = record
+        port_name = _strip(row.get("name", ""))
+        port_dir = _strip(port.direction)
+        ok = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确定删除边界端口“{port_name}”吗？\n相关连接会一起清理。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if ok != QMessageBox.StandardButton.Yes:
+            return
+
+        if port_kind == "pipe":
+            rows = _safe_list(self.data.get("pipe_ports", []))
+            self.data["pipe_ports"] = [item for idx, item in enumerate(rows) if idx != row_idx]
+            self._remove_boundary_pipe_connections(port_name)
+        else:
+            rows = _safe_list(self.data.get("rpcs", []))
+            self.data["rpcs"] = [item for idx, item in enumerate(rows) if idx != row_idx]
+            self._remove_boundary_rpc_connections(port_name, port_dir)
+            self._prune_service_code_rows()
+
+        self._set_sidebar_preview("端口已删除", [f"已删除边界端口：{port_name}"])
+        self._after_boundary_ports_changed()
+
+    # --------------------------
+    # Connections
+    # --------------------------
+    def _display_inst_name(self, name: str) -> str:
+        return "本模块" if _is_self_instance_name(name) else _strip(name)
+
+    def _connection_key(self, group: str, row: dict) -> str:
+        if group in ("reqsvc_conns", "instpipe_conns"):
+            return "|".join([
+                group,
+                _normalize_instance_name(row.get("src_inst", "")),
+                _strip(row.get("src_port", "")),
+                _normalize_instance_name(row.get("dst_inst", "")),
+                _strip(row.get("dst_port", "")),
+            ])
+        return "|".join([
+            group,
+            _normalize_instance_name(row.get("src_inst", "")),
+            _normalize_instance_name(row.get("dst_inst", "")),
+        ])
+
+    def _connection_exists(self, group: str, row: dict) -> bool:
+        target_key = self._connection_key(group, row)
+        for item in _safe_list(self.data.get(group, [])):
+            if self._connection_key(group, item) == target_key:
+                return True
+        return False
+
+    def _append_connection(self, group: str, row: dict) -> bool:
+        if self._connection_exists(group, row):
+            return False
+        rows = _safe_list(self.data.get(group, []))
+        rows.append(dict(row))
+        self.data[group] = rows
+        return True
+
+    def _remove_connection_by_key(self, group: str, key: str) -> bool:
+        rows = _safe_list(self.data.get(group, []))
+        kept = [row for row in rows if self._connection_key(group, row) != key]
+        changed = len(kept) != len(rows)
+        if changed:
+            self.data[group] = kept
+        return changed
+
+    def _validator_for_group(self, group: str):
+        return {
+            "reqsvc_conns": self._validate_reqsvc_rows,
+            "instpipe_conns": self._validate_instpipe_rows,
+            "block_conns": self._validate_block_rows,
+            "orders": self._validate_order_rows,
+        }.get(group)
+
+    def _replace_connection_row(self, group: str, old_key: str, new_row: dict) -> bool:
+        current = _safe_list(self.data.get(group, []))
+        new_key = self._connection_key(group, new_row)
+        if new_key == old_key:
+            return True
+
+        for row in current:
+            if self._connection_key(group, row) == new_key:
+                QMessageBox.information(self, "重复连接", "目标连接已经存在。")
+                return False
+
+        replaced = False
+        updated = []
+        for row in current:
+            if not replaced and self._connection_key(group, row) == old_key:
+                updated.append(dict(new_row))
+                replaced = True
+            else:
+                updated.append(dict(row))
+        if not replaced:
+            return False
+
+        validator = self._validator_for_group(group)
+        if validator is not None:
+            validated = validator(updated)
+            if validated is None:
+                return False
+            self.data[group] = validated
+        else:
+            self.data[group] = updated
+
+        self._render_connections()
+        self._notify_updated()
+        return True
+
+    def _remove_connections_for_instance(self, inst_name: str):
+        target = _normalize_instance_name(inst_name)
+        for group in ("reqsvc_conns", "instpipe_conns", "block_conns", "orders"):
+            rows = []
+            for row in _safe_list(self.data.get(group, [])):
+                src = _normalize_instance_name(row.get("src_inst", ""))
+                dst = _normalize_instance_name(row.get("dst_inst", ""))
+                if src == target or dst == target:
+                    continue
+                rows.append(row)
+            self.data[group] = rows
+
+    def _replace_instance_name_in_connections(self, old_name: str, new_name: str):
+        old_norm = _normalize_instance_name(old_name)
+        new_norm = _normalize_instance_name(new_name)
+        for group in ("reqsvc_conns", "instpipe_conns", "block_conns", "orders"):
+            updated = []
+            for row in _safe_list(self.data.get(group, [])):
+                item = dict(row)
+                if _normalize_instance_name(item.get("src_inst", "")) == old_norm:
+                    item["src_inst"] = new_norm
+                if _normalize_instance_name(item.get("dst_inst", "")) == old_norm:
+                    item["dst_inst"] = new_norm
+                updated.append(item)
+            self.data[group] = updated
+
+    def _find_port(self, owner_name: str, owner_kind: str, kind: str, direction: str, port_name: str) -> Optional[PortDot]:
+        owner_norm = _normalize_instance_name(owner_name)
+        for port in self._iter_all_ports():
+            if port.owner_kind != owner_kind:
+                continue
+            if _normalize_instance_name(port.owner_name) != owner_norm:
+                continue
+            if port.port_kind != kind or port.direction != direction:
+                continue
+            if _strip(port.port_name) != _strip(port_name):
+                continue
+            return port
+        return None
+
+    def _iter_all_ports(self):
+        for port in self.canvas.boundary.port_dots:
+            yield port
+        for node in self._inst_nodes.values():
+            for port in node.ports:
+                yield port
+        for node in self._pipe_nodes.values():
+            for port in node.ports:
+                yield port
+
+    def _anchor_for_object(self, name: str) -> Optional[LinkAnchorItem]:
+        norm = _normalize_instance_name(name)
+        if norm == SELF_INSTANCE:
+            return self.canvas.boundary.center_anchor
+        node = self._inst_nodes.get(norm)
+        if isinstance(node, BaseNodeItem):
+            return node.center_anchor
+        clock_node = self._clock_nodes.get(_strip(name))
+        if isinstance(clock_node, BaseNodeItem):
+            return clock_node.center_anchor
+        return None
+
+    def _reqsvc_ports_for_record(self, row: dict) -> tuple[Optional[PortDot], Optional[PortDot]]:
+        src_inst = _normalize_instance_name(row.get("src_inst", ""))
+        dst_inst = _normalize_instance_name(row.get("dst_inst", ""))
+        src_port = _strip(row.get("src_port", ""))
+        dst_port = _strip(row.get("dst_port", ""))
+
+        if not src_port or not dst_port:
+            return None, None
+
+        if src_inst == SELF_INSTANCE and dst_inst != SELF_INSTANCE:
+            src = self._find_port(SELF_INSTANCE, "boundary", "rpc", "serv", src_port)
+            dst = self._find_port(dst_inst, "module_inst", "rpc", "serv", dst_port)
+            return src, dst
+
+        if dst_inst == SELF_INSTANCE and src_inst != SELF_INSTANCE:
+            src = self._find_port(src_inst, "module_inst", "rpc", "req", src_port)
+            dst = self._find_port(SELF_INSTANCE, "boundary", "rpc", "req", dst_port)
+            return src, dst
+
+        if src_inst != SELF_INSTANCE and dst_inst != SELF_INSTANCE:
+            src = self._find_port(src_inst, "module_inst", "rpc", "req", src_port)
+            dst = self._find_port(dst_inst, "module_inst", "rpc", "serv", dst_port)
+            return src, dst
+
+        return None, None
+
+    def _instpipe_ports_for_record(self, row: dict) -> tuple[Optional[PortDot], Optional[PortDot]]:
+        src_inst = _normalize_instance_name(row.get("src_inst", ""))
+        dst_inst = _normalize_instance_name(row.get("dst_inst", ""))
+        src_port = _strip(row.get("src_port", ""))
+        dst_port = _strip(row.get("dst_port", ""))
+
+        if not src_port:
+            return None, None
+
+        if src_inst == SELF_INSTANCE:
+            src_owner_kind = "boundary"
+        else:
+            src_owner_kind = "module_inst"
+
+        src_candidates = [
+            self._find_port(src_inst, src_owner_kind, "pipe", "in", src_port),
+            self._find_port(src_inst, src_owner_kind, "pipe", "out", src_port),
+        ]
+        src = next((port for port in src_candidates if port is not None), None)
+        if src is None:
+            return None, None
+
+        if dst_inst == SELF_INSTANCE:
+            if src.direction not in ("in", "out") or not dst_port:
+                return None, None
+            dst = self._find_port(SELF_INSTANCE, "boundary", "pipe", src.direction, dst_port)
+            return src, dst
+
+        if not dst_port:
+            if src.direction == "out":
+                dst = self._find_port(dst_inst, "pipe_inst", "pipe", "in", "IN")
+            elif src.direction == "in":
+                dst = self._find_port(dst_inst, "pipe_inst", "pipe", "out", "OUT")
+            else:
+                dst = None
+            return src, dst
+
+        return None, None
+
+    def _block_anchors_for_record(self, row: dict) -> tuple[Optional[LinkAnchorItem], Optional[LinkAnchorItem]]:
+        src = self._anchor_for_object(row.get("src_inst", ""))
+        dst = self._anchor_for_object(row.get("dst_inst", ""))
+        return src, dst
+
+    def _order_anchors_for_record(self, row: dict) -> tuple[Optional[LinkAnchorItem], Optional[LinkAnchorItem]]:
+        src_name = _strip(row.get("src_inst", ""))
+        dst_name = _strip(row.get("dst_inst", ""))
+        if not src_name or not dst_name:
+            return None, None
+        src = self._anchor_for_object(src_name)
+        dst = self._anchor_for_object(dst_name)
+        return src, dst
+
+    def _make_edge_meta(self, group: str, row: dict) -> dict:
+        tooltip = self._connection_tooltip(group, row)
+        if group == "reqsvc_conns":
+            accent = RPC_ACCENT
+            line_style = "manhattan"
+            line_width = 2.0
+        elif group == "instpipe_conns":
+            accent = PIPE_ACCENT
+            line_style = "manhattan"
+            line_width = 2.0
+        elif group == "block_conns":
+            accent = QColor("#6b7280")
+            accent.setAlpha(180)
+            line_style = "straight"
+            line_width = 1.6
+        else:
+            accent = QColor(CLOCK_ACCENT)
+            accent.setAlpha(170)
+            line_style = "straight"
+            line_width = 1.6
+        return {
+            "group": group,
+            "key": self._connection_key(group, row),
+            "record": dict(row),
+            "accent": accent,
+            "line_style": line_style,
+            "line_width": line_width,
+            "tooltip": tooltip,
+        }
+
+    def _connection_tooltip(self, group: str, row: dict) -> str:
+        if group == "reqsvc_conns":
+            return (
+                f"请求/服务连接\n"
+                f"{self._display_inst_name(row.get('src_inst', ''))}.{_strip(row.get('src_port', ''))}"
+                f" -> "
+                f"{self._display_inst_name(row.get('dst_inst', ''))}.{_strip(row.get('dst_port', ''))}"
+            )
+        if group == "instpipe_conns":
+            dst_port = _strip(row.get("dst_port", ""))
+            if dst_port:
+                dst_desc = f"{self._display_inst_name(row.get('dst_inst', ''))}.{dst_port}"
+            else:
+                dst_desc = self._display_inst_name(row.get("dst_inst", ""))
+            return (
+                f"实例/管道连接\n"
+                f"{self._display_inst_name(row.get('src_inst', ''))}.{_strip(row.get('src_port', ''))}"
+                f" -> {dst_desc}"
+            )
+        if group == "block_conns":
+            return (
+                f"阻塞传递连接\n"
+                f"{self._display_inst_name(row.get('src_inst', ''))}"
+                f" -> "
+                f"{self._display_inst_name(row.get('dst_inst', ''))}"
+            )
+        if group == "orders":
+            return (
+                f"更新次序连接\n"
+                f"{self._display_inst_name(row.get('src_inst', ''))}"
+                f" -> "
+                f"{_strip(row.get('dst_inst', ''))}"
+            )
+        return ""
+
+    def _render_connections(self):
+        scene = self.canvas.scene
+        for item in list(scene.items()):
+            if isinstance(item, EdgeItem):
+                item.delete_self()
+
+        for row in _safe_list(self.data.get("reqsvc_conns", [])):
+            src, dst = self._reqsvc_ports_for_record(row)
+            if src is None or dst is None:
+                continue
+            edge = EdgeItem(src, dst, accent=RPC_ACCENT, on_delete=self._delete_connection_edge, on_edit=self._edit_connection_edge)
+            edge.apply_meta(self._make_edge_meta("reqsvc_conns", row))
+            scene.addItem(edge)
+
+        for row in _safe_list(self.data.get("instpipe_conns", [])):
+            src, dst = self._instpipe_ports_for_record(row)
+            if src is None or dst is None:
+                continue
+            edge = EdgeItem(src, dst, accent=PIPE_ACCENT, on_delete=self._delete_connection_edge, on_edit=self._edit_connection_edge)
+            edge.apply_meta(self._make_edge_meta("instpipe_conns", row))
+            scene.addItem(edge)
+
+        for row in _safe_list(self.data.get("block_conns", [])):
+            src, dst = self._block_anchors_for_record(row)
+            if src is None or dst is None:
+                continue
+            edge = EdgeItem(src, dst, accent=QColor("#6b7280"), on_delete=self._delete_connection_edge, on_edit=self._edit_connection_edge)
+            edge.apply_meta(self._make_edge_meta("block_conns", row))
+            scene.addItem(edge)
+
+        for row in _safe_list(self.data.get("orders", [])):
+            src, dst = self._order_anchors_for_record(row)
+            if src is None or dst is None:
+                continue
+            edge = EdgeItem(src, dst, accent=CLOCK_ACCENT, on_delete=self._delete_connection_edge, on_edit=self._edit_connection_edge)
+            edge.apply_meta(self._make_edge_meta("orders", row))
+            scene.addItem(edge)
+
+    def _resolve_reqsvc_connection(self, port_a: PortDot, port_b: PortDot) -> Optional[dict]:
+        if "pipe_inst" in (port_a.owner_kind, port_b.owner_kind):
+            QMessageBox.information(self, "无法连接", "请求/服务连接不能直接连到管道实例。")
+            return None
+
+        if port_a.owner_kind == "boundary" and port_b.owner_kind == "boundary":
+            QMessageBox.information(self, "无法连接", "本模块边界端口之间不能直接建立请求/服务连接。")
+            return None
+
+        if port_a.owner_kind == "module_inst" and port_b.owner_kind == "module_inst":
+            req_port = port_a if port_a.direction == "req" else port_b if port_b.direction == "req" else None
+            svc_port = port_a if port_a.direction == "serv" else port_b if port_b.direction == "serv" else None
+            if req_port is None or svc_port is None:
+                QMessageBox.information(self, "无法连接", "子模块之间的请求/服务连接要求：请求端口 -> 服务端口。")
+                return None
+            return {
+                "src_inst": req_port.owner_name,
+                "src_port": req_port.port_name,
+                "dst_inst": svc_port.owner_name,
+                "dst_port": svc_port.port_name,
+            }
+
+        boundary = port_a if port_a.owner_kind == "boundary" else port_b if port_b.owner_kind == "boundary" else None
+        module_port = port_b if boundary is port_a else port_a if boundary is not None else None
+        if boundary is None or module_port is None or module_port.owner_kind != "module_inst":
+            QMessageBox.information(self, "无法连接", "当前请求/服务连接只支持：子模块 <-> 子模块 或 子模块 <-> 本模块。")
+            return None
+
+        if boundary.direction == "req" and module_port.direction == "req":
+            return {
+                "src_inst": module_port.owner_name,
+                "src_port": module_port.port_name,
+                "dst_inst": SELF_INSTANCE,
+                "dst_port": boundary.port_name,
+            }
+
+        if boundary.direction == "serv" and module_port.direction == "serv":
+            return {
+                "src_inst": SELF_INSTANCE,
+                "src_port": boundary.port_name,
+                "dst_inst": module_port.owner_name,
+                "dst_port": module_port.port_name,
+            }
+
+        QMessageBox.information(self, "无法连接", "本模块与子模块之间的请求/服务连接要求同类端口相连：req -> req 或 service -> service。")
+        return None
+
+    def _resolve_instpipe_connection(self, port_a: PortDot, port_b: PortDot) -> Optional[dict]:
+        if port_a.owner_kind == "pipe_inst" and port_b.owner_kind == "pipe_inst":
+            QMessageBox.information(self, "无法连接", "两个管道实例之间不能直接建立实例/管道连接。")
+            return None
+
+        if port_a.owner_kind == "boundary" and port_b.owner_kind == "boundary":
+            QMessageBox.information(self, "无法连接", "本模块边界端口之间不能直接建立实例/管道连接。")
+            return None
+
+        if "pipe_inst" in (port_a.owner_kind, port_b.owner_kind):
+            pipe_port = port_a if port_a.owner_kind == "pipe_inst" else port_b
+            module_port = port_b if pipe_port is port_a else port_a
+            if module_port.owner_kind != "module_inst":
+                QMessageBox.information(self, "无法连接", "当前版本仅支持“子模块管道端口 -> 管道实例”的实例/管道连接。")
+                return None
+
+            if module_port.direction == "out" and pipe_port.direction == "in":
+                return {
+                    "src_inst": module_port.owner_name,
+                    "src_port": module_port.port_name,
+                    "dst_inst": pipe_port.owner_name,
+                    "dst_port": "",
+                }
+            if module_port.direction == "in" and pipe_port.direction == "out":
+                return {
+                    "src_inst": module_port.owner_name,
+                    "src_port": module_port.port_name,
+                    "dst_inst": pipe_port.owner_name,
+                    "dst_port": "",
+                }
+
+            QMessageBox.information(self, "无法连接", "子模块管道输出只能连到管道实例 IN；子模块管道输入只能连到管道实例 OUT。")
+            return None
+
+        boundary = port_a if port_a.owner_kind == "boundary" else port_b if port_b.owner_kind == "boundary" else None
+        module_port = port_b if boundary is port_a else port_a if boundary is not None else None
+        if boundary is None or module_port is None or module_port.owner_kind != "module_inst":
+            QMessageBox.information(self, "无法连接", "当前实例/管道连接只支持：子模块 <-> 本模块，或 子模块 <-> 管道实例。")
+            return None
+
+        if boundary.direction != module_port.direction:
+            QMessageBox.information(self, "无法连接", "子模块端口映射到本模块边界时，方向必须保持一致（in -> in / out -> out）。")
+            return None
+
+        return {
+            "src_inst": module_port.owner_name,
+            "src_port": module_port.port_name,
+            "dst_inst": SELF_INSTANCE,
+            "dst_port": boundary.port_name,
+        }
+
+    def _resolve_connection_from_ports(self, start_port: PortDot, end_port: PortDot) -> Optional[dict]:
+        if start_port is end_port:
+            QMessageBox.information(self, "无法连接", "同一个端口不能连接到自身。")
+            return None
+
+        if start_port.port_kind != end_port.port_kind:
+            QMessageBox.information(self, "无法连接", "只能连接相同类别的端口。")
+            return None
+
+        if start_port.port_kind == "rpc":
+            group = "reqsvc_conns"
+            row = self._resolve_reqsvc_connection(start_port, end_port)
+        else:
+            group = "instpipe_conns"
+            row = self._resolve_instpipe_connection(start_port, end_port)
+
+        if row is None:
+            return None
+
+        if not self._append_connection(group, row):
+            QMessageBox.information(self, "重复连接", "该连接已经存在，无需重复创建。")
+            return None
+
+        self._notify_updated()
+        return self._make_edge_meta(group, row)
+
+    def _delete_connection_edge(self, edge: EdgeItem):
+        group = _strip(edge.conn_group)
+        key = _strip(edge.conn_key)
+        if not group or not key:
+            edge.delete_self()
+            return
+
+        if self._remove_connection_by_key(group, key):
+            self._notify_updated()
+        edge.delete_self()
+
+    def _dialog_page_for_connection_group(self, dlg: ConnectionsDialog, group: str) -> Optional[dict]:
+        return {
+            "reqsvc_conns": dlg.reqsvc_page,
+            "instpipe_conns": dlg.instpipe_page,
+            "block_conns": dlg.block_page,
+            "orders": dlg.order_page,
+        }.get(group)
+
+    def _focus_connection_in_dialog(self, dlg: ConnectionsDialog, group: str, key: str):
+        page = self._dialog_page_for_connection_group(dlg, group)
+        if page is None:
+            return
+
+        idx = dlg.tabs.indexOf(page["widget"])
+        if idx >= 0:
+            dlg.tabs.setCurrentIndex(idx)
+
+        table = page["table"]
+        rows = []
+        if group == "reqsvc_conns":
+            rows = _safe_list(self.data.get("reqsvc_conns", []))
+        elif group == "instpipe_conns":
+            rows = _safe_list(self.data.get("instpipe_conns", []))
+        elif group == "block_conns":
+            rows = _safe_list(self.data.get("block_conns", []))
+        elif group == "orders":
+            rows = _safe_list(self.data.get("orders", []))
+
+        for row_idx, row in enumerate(rows):
+            if self._connection_key(group, row) == key:
+                table.setCurrentCell(row_idx, 0)
+                table.selectRow(row_idx)
+                break
+
+    def _edit_connection_edge(self, edge: EdgeItem):
+        group = _strip(edge.conn_group)
+        key = _strip(edge.conn_key)
+        if not group or not key:
+            self._edit_connections()
+            return
+        self._edit_connections(focus_group=group, focus_key=key)
+
+    def _connection_object_name_from_target(self, target) -> str:
+        if target is self.canvas.boundary:
+            return SELF_INSTANCE
+        if isinstance(target, BaseNodeItem):
+            payload = target.payload or {}
+            kind = payload.get("_kind", "")
+            if kind == "module_inst":
+                return _strip(payload.get("inst", ""))
+            if kind == "clock_block":
+                return _strip(payload.get("name", ""))
+        return ""
+
+    def _retarget_connection_edge(self, edge: EdgeItem, side: str, target) -> bool:
+        group = _strip(edge.conn_group)
+        key = _strip(edge.conn_key)
+        side = _strip(side)
+        if not group or not key or side not in ("src", "dst"):
+            return False
+
+        if group in ("reqsvc_conns", "instpipe_conns"):
+            if not isinstance(target, PortDot):
+                return False
+            fixed_port = edge.in_port if side == "src" else edge.out_port
+            if not isinstance(fixed_port, PortDot):
+                return False
+            if group == "reqsvc_conns":
+                new_row = self._resolve_reqsvc_connection(fixed_port, target)
+            else:
+                new_row = self._resolve_instpipe_connection(fixed_port, target)
+            if new_row is None:
+                return False
+            return self._replace_connection_row(group, key, new_row)
+
+        if group in ("block_conns", "orders"):
+            target_name = self._connection_object_name_from_target(target)
+            if not target_name:
+                return False
+            new_row = dict(edge.conn_record or {})
+            if side == "src":
+                new_row["src_inst"] = target_name
+            else:
+                new_row["dst_inst"] = target_name
+            return self._replace_connection_row(group, key, new_row)
+
+        return False
+
+    def _validate_reqsvc_rows(self, rows: list[dict]) -> Optional[list[dict]]:
+        validated: list[dict] = []
+        seen: set[str] = set()
+        for row in rows:
+            item = {
+                "src_inst": _normalize_instance_name(row.get("src_inst", "")),
+                "src_port": _strip(row.get("src_port", "")),
+                "dst_inst": _normalize_instance_name(row.get("dst_inst", "")),
+                "dst_port": _strip(row.get("dst_port", "")),
+            }
+            if not all(item.values()):
+                QMessageBox.warning(self, "输入无效", "请求/服务连接的四个字段都不能为空。")
+                return None
+            src, dst = self._reqsvc_ports_for_record(item)
+            if src is None or dst is None:
+                QMessageBox.warning(
+                    self,
+                    "连接无效",
+                    f"无法解析请求/服务连接：\n{self._display_inst_name(item['src_inst'])}.{item['src_port']} -> "
+                    f"{self._display_inst_name(item['dst_inst'])}.{item['dst_port']}",
+                )
+                return None
+            key = self._connection_key("reqsvc_conns", item)
+            if key in seen:
+                continue
+            seen.add(key)
+            validated.append(item)
+        return validated
+
+    def _validate_instpipe_rows(self, rows: list[dict]) -> Optional[list[dict]]:
+        validated: list[dict] = []
+        seen: set[str] = set()
+        for row in rows:
+            item = {
+                "src_inst": _normalize_instance_name(row.get("src_inst", "")),
+                "src_port": _strip(row.get("src_port", "")),
+                "dst_inst": _normalize_instance_name(row.get("dst_inst", "")),
+                "dst_port": _strip(row.get("dst_port", "")),
+            }
+            if not item["src_inst"] or not item["src_port"] or not item["dst_inst"]:
+                QMessageBox.warning(self, "输入无效", "实例/管道连接至少需要填写源实例名、源端口名、目标实例名。")
+                return None
+            src, dst = self._instpipe_ports_for_record(item)
+            if src is None or dst is None:
+                dst_desc = self._display_inst_name(item["dst_inst"])
+                if item["dst_port"]:
+                    dst_desc += f".{item['dst_port']}"
+                QMessageBox.warning(
+                    self,
+                    "连接无效",
+                    f"无法解析实例/管道连接：\n{self._display_inst_name(item['src_inst'])}.{item['src_port']} -> {dst_desc}",
+                )
+                return None
+            key = self._connection_key("instpipe_conns", item)
+            if key in seen:
+                continue
+            seen.add(key)
+            validated.append(item)
+        return validated
+
+    def _validate_block_rows(self, rows: list[dict]) -> Optional[list[dict]]:
+        validated: list[dict] = []
+        seen: set[str] = set()
+        allowed = {SELF_INSTANCE}
+        allowed.update(_strip(row.get("inst", "")) for row in _safe_list(self.data.get("submodules", [])) if _strip(row.get("inst", "")))
+        for row in rows:
+            item = {
+                "src_inst": _normalize_instance_name(row.get("src_inst", "")),
+                "dst_inst": _normalize_instance_name(row.get("dst_inst", "")),
+            }
+            if not item["src_inst"] or not item["dst_inst"]:
+                QMessageBox.warning(self, "输入无效", "阻塞传递连接的源对象名和目标对象名不能为空。")
+                return None
+            if item["src_inst"] not in allowed or item["dst_inst"] not in allowed:
+                QMessageBox.warning(self, "输入无效", "阻塞传递连接仅允许使用“本模块”或现有子模块实例名。")
+                return None
+            key = self._connection_key("name_pair", item)
+            if key in seen:
+                continue
+            seen.add(key)
+            validated.append(item)
+        return validated
+
+    def _validate_order_rows(self, rows: list[dict]) -> Optional[list[dict]]:
+        validated: list[dict] = []
+        seen: set[str] = set()
+        allowed_sources = {_strip(row.get("inst", "")) for row in _safe_list(self.data.get("submodules", [])) if _strip(row.get("inst", ""))}
+        allowed_targets = {_strip(row.get("name", "")) for row in _safe_list(self.data.get("clock_blocks", [])) if _strip(row.get("name", ""))}
+        for row in rows:
+            item = {
+                "src_inst": _strip(row.get("src_inst", "")),
+                "dst_inst": _strip(row.get("dst_inst", "")),
+            }
+            if not item["src_inst"] or not item["dst_inst"]:
+                QMessageBox.warning(self, "输入无效", "更新次序连接的源对象名和目标对象名不能为空。")
+                return None
+            if item["src_inst"] not in allowed_sources:
+                QMessageBox.warning(self, "输入无效", "更新次序连接的源对象必须是现有子模块实例名。")
+                return None
+            if item["dst_inst"] not in allowed_targets:
+                QMessageBox.warning(self, "输入无效", "更新次序连接的目标对象必须是现有时钟代码块名。")
+                return None
+            key = self._connection_key("name_pair", item)
+            if key in seen:
+                continue
+            seen.add(key)
+            validated.append(item)
+        return validated
+
     # --------------------------
     # Canvas refresh & render
     # --------------------------
@@ -1931,7 +4245,22 @@ class ModuleCanvasPage(QWidget):
 
     def refresh_canvas(self, updated_module_name: str | None = None):
         if updated_module_name is None or updated_module_name == self.module_name:
+            latest = self.module_resolver(self.module_name)
+            if isinstance(latest, dict):
+                synced = dict(latest)
+                synced["name"] = self.module_name
+                if "parent_port_pos" not in synced or not isinstance(synced.get("parent_port_pos"), dict):
+                    synced["parent_port_pos"] = {}
+                for key in (
+                    "reqsvc_conns", "instpipe_conns", "block_conns", "orders",
+                    "clock_blocks", "service_blocks", "subreq_blocks",
+                ):
+                    if key not in synced or not isinstance(synced.get(key), list):
+                        synced[key] = []
+                self.data = synced
+            self._refresh_sidebar_local_views()
             self._refresh_parent_ports()
+            self._render_clock_blocks()
 
         for inst, node in list(self._inst_nodes.items()):
             payload = node.payload or {}
@@ -1956,15 +4285,86 @@ class ModuleCanvasPage(QWidget):
 
         self.canvas.scene.update()
         self.canvas.view.viewport().update()
+        self._render_connections()
+
+    def _clock_block_tooltip(self, row: dict) -> str:
+        name = _strip(row.get("name", "")) or "未命名时钟代码块"
+        comment = _strip(row.get("comment", "")) or "（无注释）"
+        code = _strip(row.get("code", ""))
+        code_lines = len(code.splitlines()) if code else 0
+        return (
+            f"时钟代码块：{name}\n"
+            f"注释：{comment}\n"
+            f"代码行数：{code_lines}"
+        )
+
+    def _render_clock_blocks(self):
+        sc = self.canvas.scene
+        for node in list(self._clock_nodes.values()):
+            try:
+                node.clear_anchor_edges()
+                node.clear_ports()
+            except Exception:
+                pass
+            if node.scene() is sc:
+                sc.removeItem(node)
+        self._clock_nodes.clear()
+
+        clocks = _safe_list(self.data.get("clock_blocks", []))
+        x0, y0 = 650, -720
+        dx, dy = 280, 150
+        col, row = 0, 0
+        for block in clocks:
+            name = _strip(block.get("name", ""))
+            if not name:
+                continue
+
+            node = self.canvas.add_clock_block_node(name, QPointF(x0 + col * dx, y0 + row * dy))
+            node.set_payload({"_kind": "clock_block", **block})
+            node.setToolTip(self._clock_block_tooltip(block))
+
+            w = block.get("w")
+            h = block.get("h")
+            if isinstance(w, (int, float)) and isinstance(h, (int, float)):
+                node.prepareGeometryChange()
+                node.w = int(w)
+                node.h = int(h)
+                node._update_center_anchor()
+
+            self._clock_nodes[name] = node
+
+            col += 1
+            if col >= 2:
+                col = 0
+                row += 1
 
     def _render_all_instances(self):
-        self._inst_nodes.clear()
         sc = self.canvas.scene
+        old_inst_nodes = list(self._inst_nodes.values())
+        old_pipe_nodes = list(self._pipe_nodes.values())
+        old_clock_nodes = list(self._clock_nodes.values())
+
+        for node in old_inst_nodes + old_pipe_nodes + old_clock_nodes:
+            try:
+                node.clear_anchor_edges()
+                node.clear_ports()
+            except Exception:
+                pass
+            if node.scene() is sc:
+                sc.removeItem(node)
+
+        self._inst_nodes.clear()
+        self._pipe_nodes.clear()
+        self._clock_nodes.clear()
 
         for it in list(sc.items()):
-            if it is self.canvas.boundary:
+            if it is self.canvas.boundary or it.parentItem() is not None:
                 continue
-            sc.removeItem(it)
+            if isinstance(it, EdgeItem):
+                it.delete_self()
+                continue
+            if it.scene() is sc:
+                sc.removeItem(it)
 
         self._refresh_parent_ports()
 
@@ -2031,10 +4431,14 @@ class ModuleCanvasPage(QWidget):
                 node.h = int(h)
 
             node.set_ports(pipe_ports=pipe_ports, rpcs=[])
+            self._pipe_nodes[inst] = node
             col += 1
             if col >= 4:
                 col = 0
                 row += 1
+
+        self._render_clock_blocks()
+        self._render_connections()
 
     # --------------------------
     # Create instances
@@ -2113,7 +4517,37 @@ class ModuleCanvasPage(QWidget):
             {"dir": "out", "name": "OUT", "comment": "", "dtype": dtype},
         ]
         node.set_ports(pipe_ports=pipe_ports, rpcs=[])
+        self._pipe_nodes[inst] = node
 
+        self._notify_updated()
+
+    def _create_clock_block_at(self, scene_pos: QPointF):
+        dlg = ClockBlockDialog("创建时钟代码块", parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        block = dlg.get_data()
+        name = _strip(block.get("name", ""))
+        if not name:
+            QMessageBox.warning(self, "输入无效", "时钟代码块名不能为空。")
+            return
+
+        clocks = _safe_list(self.data.get("clock_blocks", []))
+        if any(_strip(x.get("name")) == name for x in clocks):
+            QMessageBox.warning(self, "重复名称", f"时钟代码块“{name}”已存在。")
+            return
+
+        node = self.canvas.add_clock_block_node(name, scene_pos)
+        block["code"] = ""
+        block["w"] = int(node.w)
+        block["h"] = int(node.h)
+
+        clocks.append(block)
+        self.data["clock_blocks"] = clocks
+
+        node.set_payload({"_kind": "clock_block", **block})
+        node.setToolTip(self._clock_block_tooltip(block))
+        self._clock_nodes[name] = node
         self._notify_updated()
 
     # --------------------------
@@ -2169,10 +4603,15 @@ class ModuleCanvasPage(QWidget):
             node.update()
 
             # 修复：实例名变更时，更新索引
+            if inst_old and inst_new and inst_old != inst_new:
+                self._replace_instance_name_in_connections(inst_old, inst_new)
+                self._replace_subreq_inst_name(inst_old, inst_new)
+            self._prune_subreq_code_rows_for_instance(inst_new, mod_new)
             if inst_old and inst_old in self._inst_nodes:
                 self._inst_nodes.pop(inst_old, None)
             self._inst_nodes[inst_new] = node
 
+            self._render_connections()
             self._notify_updated()
             return
 
@@ -2220,6 +4659,67 @@ class ModuleCanvasPage(QWidget):
             node.set_ports(pipe_ports=pipe_ports, rpcs=[])
             node.update()
 
+            if inst_old and inst_new and inst_old != inst_new:
+                self._replace_instance_name_in_connections(inst_old, inst_new)
+            if inst_old and inst_old in self._pipe_nodes:
+                self._pipe_nodes.pop(inst_old, None)
+            self._pipe_nodes[inst_new] = node
+
+            self._render_connections()
+            self._notify_updated()
+            return
+
+        if kind == "clock_block":
+            dlg = ClockBlockDialog("编辑时钟代码块", data=payload, parent=self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            old_name = _strip(payload.get("name", ""))
+            new_data = dlg.get_data()
+            new_name = _strip(new_data.get("name", ""))
+            if not new_name:
+                QMessageBox.warning(self, "输入无效", "时钟代码块名不能为空。")
+                return
+
+            clocks = _safe_list(self.data.get("clock_blocks", []))
+            if old_name != new_name and any(_strip(x.get("name")) == new_name for x in clocks):
+                QMessageBox.warning(self, "重复名称", f"时钟代码块“{new_name}”已存在。")
+                return
+
+            for block in clocks:
+                if _strip(block.get("name")) == old_name:
+                    code = block.get("code", "")
+                    w = block.get("w")
+                    h = block.get("h")
+                    block.update(new_data)
+                    block["code"] = code
+                    if isinstance(w, (int, float)):
+                        block["w"] = int(w)
+                    if isinstance(h, (int, float)):
+                        block["h"] = int(h)
+                    new_data["code"] = code
+                    if isinstance(w, (int, float)):
+                        new_data["w"] = int(w)
+                    if isinstance(h, (int, float)):
+                        new_data["h"] = int(h)
+                    break
+            self.data["clock_blocks"] = clocks
+
+            if old_name and new_name and old_name != new_name:
+                for row in _safe_list(self.data.get("orders", [])):
+                    if _strip(row.get("dst_inst", "")) == old_name:
+                        row["dst_inst"] = new_name
+
+            node.title = new_name
+            node.set_payload({"_kind": "clock_block", **new_data})
+            node.setToolTip(self._clock_block_tooltip(new_data))
+            node.update()
+
+            if old_name and old_name in self._clock_nodes:
+                self._clock_nodes.pop(old_name, None)
+            self._clock_nodes[new_name] = node
+
+            self._render_connections()
             self._notify_updated()
             return
 
@@ -2248,6 +4748,7 @@ class ModuleCanvasPage(QWidget):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         self.data["local_cfgs"] = dlg.dump()
+        self._refresh_sidebar_local_views()
         self._notify_updated()
 
     def _edit_local_harness(self):
@@ -2256,6 +4757,7 @@ class ModuleCanvasPage(QWidget):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         self.data["local_harnesses"] = dlg.dump()
+        self._refresh_sidebar_local_views()
         self._notify_updated()
 
     def _edit_pipe_ports(self):
@@ -2306,6 +4808,7 @@ class ModuleCanvasPage(QWidget):
 
         self.data["pipe_ports"] = pipe_ports
         self.data["rpcs"] = rpcs
+        self._prune_service_code_rows()
         self._notify_updated()
         self.refresh_canvas(updated_module_name=self.module_name)
 
@@ -2348,10 +4851,73 @@ class ModuleCanvasPage(QWidget):
         self.data["storages"] = rows
         self._notify_updated()
 
+    def _edit_connections(self, focus_group: str | None = None, focus_key: str | None = None):
+        dlg = ConnectionsDialog(parent=self)
+        dlg.load(self.data)
+        if focus_group and focus_key:
+            self._focus_connection_in_dialog(dlg, focus_group, focus_key)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        dumped = dlg.dump()
+        reqsvc_rows = self._validate_reqsvc_rows(_safe_list(dumped.get("reqsvc_conns", [])))
+        if reqsvc_rows is None:
+            return
+
+        instpipe_rows = self._validate_instpipe_rows(_safe_list(dumped.get("instpipe_conns", [])))
+        if instpipe_rows is None:
+            return
+
+        block_rows = self._validate_block_rows(_safe_list(dumped.get("block_conns", [])))
+        if block_rows is None:
+            return
+
+        order_rows = self._validate_order_rows(_safe_list(dumped.get("orders", [])))
+        if order_rows is None:
+            return
+
+        self.data["reqsvc_conns"] = reqsvc_rows
+        self.data["instpipe_conns"] = instpipe_rows
+        self.data["block_conns"] = block_rows
+        self.data["orders"] = order_rows
+        self._render_connections()
+        self._notify_updated()
+
     def _edit_code_blocks(self):
         dlg = CodeBlocksDialog(parent=self)
         dlg.load(self.data)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        self.data.update(dlg.dump())
+        dumped = dlg.dump()
+
+        old_clocks = {
+            _strip(row.get("name", "")): row
+            for row in _safe_list(self.data.get("clock_blocks", []))
+            if _strip(row.get("name", ""))
+        }
+        normalized_clocks = []
+        seen_names: set[str] = set()
+        for row in _safe_list(dumped.get("clock_blocks", [])):
+            name = _strip(row.get("name", ""))
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+            item = dict(row)
+            old = old_clocks.get(name)
+            if isinstance(old, dict):
+                for hidden_key in ("w", "h"):
+                    if hidden_key in old:
+                        item[hidden_key] = old[hidden_key]
+            normalized_clocks.append(item)
+
+        dumped["clock_blocks"] = normalized_clocks
+        self.data.update(dumped)
+
+        allowed_clock_names = {row.get("name", "") for row in normalized_clocks}
+        self.data["orders"] = [
+            row for row in _safe_list(self.data.get("orders", []))
+            if _strip(row.get("dst_inst", "")) in allowed_clock_names
+        ]
+        self._render_clock_blocks()
+        self._render_connections()
         self._notify_updated()

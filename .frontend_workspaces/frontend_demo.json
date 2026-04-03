@@ -1,0 +1,129 @@
+{
+  "format": "hyper_ide_frontend_workspace",
+  "version": 1,
+  "saved_at": "2026-04-02 18:20:58",
+  "state": {
+    "project_name": "frontend_demo",
+    "configs": [
+      {
+        "name": "ADDR_W",
+        "value": "32",
+        "comment": "地址宽度",
+        "realvalue": "32"
+      },
+      {
+        "name": "BURST_LEN",
+        "value": "16",
+        "comment": "突发长度",
+        "realvalue": "16"
+      },
+      {
+        "name": "CACHE_BYTES",
+        "value": "DATA_W * BURST_LEN",
+        "comment": "缓存大小表达式",
+        "realvalue": ""
+      },
+      {
+        "name": "DATA_W",
+        "value": "64",
+        "comment": "数据宽度",
+        "realvalue": "64"
+      }
+    ],
+    "bundles": [
+      {
+        "name": "AXI_Lite_Req",
+        "comment": "AXI-Lite 请求线束示例",
+        "tags": "frontend-demo",
+        "definition": "{\"members\":[{\"name\":\"addr\",\"comment\":\"地址\",\"type\":\"\",\"value\":\"0\",\"uint_length\":\"ADDR_W\",\"dims\":[]},{\"name\":\"data\",\"comment\":\"数据\",\"type\":\"\",\"value\":\"0\",\"uint_length\":\"DATA_W\",\"dims\":[]}],\"enum_members\":[],\"is_alias\":false}"
+      }
+    ],
+    "modules": {
+      "Core_Logic": {
+        "name": "Core_Logic",
+        "comment": "核心逻辑模块",
+        "submodules": [
+          {
+            "inst": "CPU_Cluster_A",
+            "module": "CPU",
+            "comment": ""
+          },
+          {
+            "inst": "Memory_Bus_64",
+            "module": "Bus64",
+            "comment": ""
+          }
+        ],
+        "local_cfgs": [],
+        "local_harnesses": [],
+        "rpcs": [],
+        "pipe_ports": [],
+        "pipes": [],
+        "storages": [],
+        "reqsvc_conns": [],
+        "instpipe_conns": [],
+        "block_conns": [],
+        "orders": [],
+        "clock_blocks": [],
+        "service_blocks": [],
+        "subreq_blocks": [],
+        "helper_code": []
+      },
+      "CPU": {
+        "name": "CPU",
+        "comment": "CPU 子模块",
+        "submodules": [],
+        "local_cfgs": [],
+        "local_harnesses": [],
+        "rpcs": [],
+        "pipe_ports": [],
+        "pipes": [],
+        "storages": [],
+        "reqsvc_conns": [],
+        "instpipe_conns": [],
+        "block_conns": [],
+        "orders": [],
+        "clock_blocks": [],
+        "service_blocks": [],
+        "subreq_blocks": [],
+        "helper_code": []
+      },
+      "Bus64": {
+        "name": "Bus64",
+        "comment": "总线子模块",
+        "submodules": [],
+        "local_cfgs": [],
+        "local_harnesses": [],
+        "rpcs": [],
+        "pipe_ports": [],
+        "pipes": [],
+        "storages": [],
+        "reqsvc_conns": [],
+        "instpipe_conns": [],
+        "block_conns": [],
+        "orders": [],
+        "clock_blocks": [],
+        "service_blocks": [],
+        "subreq_blocks": [],
+        "helper_code": []
+      }
+    },
+    "debug_points": [
+      {
+        "name": "bus_req_valid",
+        "expr": "Memory_Bus_64.req_valid",
+        "comment": "总线请求有效信号检查点",
+        "trigger": "always",
+        "kind": "wave"
+      },
+      {
+        "name": "cpu_pc_trace",
+        "expr": "CPU_Cluster_A.pc",
+        "comment": "观察 CPU 当前 PC 变化",
+        "trigger": "posedge(clk)",
+        "kind": "wave"
+      }
+    ],
+    "main_module_name": "Core_Logic"
+  }
+}

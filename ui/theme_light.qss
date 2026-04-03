@@ -1,0 +1,229 @@
+/* =========================
+   HYPER-IDE Light Theme QSS
+   Primary: #0f766e
+   Background: #f5f7fb / #ffffff / #eef2f7
+   Panel: #ffffff
+   Border: #d7dde7
+   Text: #18212f / #5b6472
+   ========================= */
+
+* {
+    font-family: "PingFang SC", "Microsoft YaHei UI", "Segoe UI", "Helvetica Neue", "Arial";
+    color: #18212f;
+}
+
+QWidget {
+    background: #f5f7fb;
+}
+
+QMainWindow {
+    background: #f5f7fb;
+}
+
+QToolBar {
+    background: #ffffff;
+    border-bottom: 1px solid #d7dde7;
+    spacing: 6px;
+    padding: 4px 6px;
+}
+
+QToolButton {
+    background: transparent;
+    border: 0px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    color: #18212f;
+}
+
+QToolButton:hover {
+    background: rgba(15, 118, 110, 0.10);
+}
+
+QToolButton:pressed {
+    background: rgba(15, 118, 110, 0.18);
+}
+
+QMenu {
+    background: #ffffff;
+    border: 1px solid #d7dde7;
+    padding: 6px;
+}
+
+QMenu::item {
+    padding: 6px 14px;
+    border-radius: 6px;
+}
+
+QMenu::item:selected {
+    background: rgba(15, 118, 110, 0.12);
+}
+
+QStatusBar {
+    background: #ffffff;
+    border-top: 1px solid #d7dde7;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+QDockWidget {
+    border: 1px solid #d7dde7;
+    background: #f5f7fb;
+}
+
+QDockWidget::title {
+    background: #eef2f7;
+    padding: 8px 10px;
+    border-bottom: 1px solid #d7dde7;
+    font-weight: 600;
+    color: #5b6472;
+}
+
+QDockWidget QWidget {
+    background: #f5f7fb;
+}
+
+QSplitter::handle {
+    background: #d7dde7;
+}
+
+QSplitter::handle:hover {
+    background: rgba(15, 118, 110, 0.28);
+}
+
+QTabWidget::pane {
+    border: 1px solid #d7dde7;
+    top: -1px;
+    background: #ffffff;
+}
+
+QTabBar {
+    background: #ffffff;
+}
+
+QTabBar::tab {
+    background: transparent;
+    border-right: 1px solid #d7dde7;
+    padding: 8px 14px;
+    color: #5b6472;
+    min-height: 28px;
+}
+
+QTabBar::tab:hover {
+    background: rgba(15, 118, 110, 0.06);
+    color: #18212f;
+}
+
+QTabBar::tab:selected {
+    background: #ffffff;
+    color: #18212f;
+    border-top: 2px solid #0f766e;
+}
+
+QPushButton {
+    background: #ffffff;
+    border: 1px solid #d7dde7;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-weight: 600;
+    color: #18212f;
+}
+
+QPushButton:hover {
+    border-color: rgba(15, 118, 110, 0.6);
+    background: rgba(15, 118, 110, 0.08);
+}
+
+QPushButton:pressed {
+    background: rgba(15, 118, 110, 0.16);
+}
+
+QPushButton:disabled {
+    color: rgba(24, 33, 47, 0.35);
+    background: rgba(255, 255, 255, 0.6);
+    border-color: rgba(215, 221, 231, 0.8);
+}
+
+QLineEdit, QTextEdit, QPlainTextEdit, QTreeWidget, QListWidget, QTableWidget, QTableView {
+    background: #ffffff;
+    border: 1px solid #d7dde7;
+    border-radius: 8px;
+    selection-background-color: rgba(15, 118, 110, 0.20);
+    selection-color: #18212f;
+}
+
+QLineEdit, QTextEdit, QPlainTextEdit {
+    padding: 6px 8px;
+}
+
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
+    border: 1px solid rgba(15, 118, 110, 0.72);
+}
+
+QTreeWidget::item, QListWidget::item {
+    padding: 6px 8px;
+    border-radius: 6px;
+    color: #263140;
+}
+
+QTreeWidget::item:hover, QListWidget::item:hover {
+    background: rgba(15, 118, 110, 0.06);
+}
+
+QTreeWidget::item:selected, QListWidget::item:selected {
+    background: rgba(15, 118, 110, 0.18);
+    color: #18212f;
+}
+
+QHeaderView::section {
+    background: #eef2f7;
+    color: #5b6472;
+    padding: 6px 8px;
+    border: 1px solid #d7dde7;
+    font-weight: 600;
+}
+
+QScrollBar:vertical, QScrollBar:horizontal {
+    background: transparent;
+    border: none;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background: rgba(91, 100, 114, 0.35);
+    border-radius: 6px;
+    min-height: 24px;
+    min-width: 24px;
+}
+
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
+    background: rgba(15, 118, 110, 0.35);
+}
+
+QScrollBar::add-line, QScrollBar::sub-line,
+QScrollBar::add-page, QScrollBar::sub-page {
+    background: transparent;
+    border: none;
+}
+
+QGroupBox {
+    border: 1px solid #d7dde7;
+    border-radius: 10px;
+    margin-top: 10px;
+    padding-top: 10px;
+    background: #ffffff;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 6px;
+    color: #5b6472;
+    background: #ffffff;
+}
+
+QLabel#pageTitle {
+    font-weight: 700;
+    color: #18212f;
+}

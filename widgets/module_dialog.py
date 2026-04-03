@@ -40,6 +40,7 @@ class ModuleDialog(QDialog):
         self.resize(1100, 720)
 
         module_data = module_data or {}
+        self._raw_data = dict(module_data)
 
         root = QVBoxLayout(self)
 
@@ -357,6 +358,16 @@ class ModuleDialog(QDialog):
             "submodules": self._table_to_rows(self.submod_tbl, ["inst", "module", "comment", "cfg_overrides"]),
             "pipes": self._table_to_rows(self.pipe_inst_tbl, ["inst", "comment", "dtype", "in_size", "out_size", "buf", "latency", "handshake", "valid"]),
             "storages": storages,
+
+            "reqsvc_conns": self._raw_data.get("reqsvc_conns", []),
+            "instpipe_conns": self._raw_data.get("instpipe_conns", []),
+            "block_conns": self._raw_data.get("block_conns", []),
+            "orders": self._raw_data.get("orders", []),
+            "clock_blocks": self._raw_data.get("clock_blocks", []),
+            "service_blocks": self._raw_data.get("service_blocks", []),
+            "subreq_blocks": self._raw_data.get("subreq_blocks", []),
+            "helper_code": self._raw_data.get("helper_code", []),
+            "parent_port_pos": self._raw_data.get("parent_port_pos", {}),
         }
         self.accept()
 
